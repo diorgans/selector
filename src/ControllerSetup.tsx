@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { getMixer } from './audio/engine.ts'
+import { listOutputs, savedOutput, useOutput, type Output } from './output.ts'
 import { connect, ddjSrPreset, detectRel, deviceName, lastAction, loadMap, onAction, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
 
 /** The controller window: connect, learn each control, then use it. */
@@ -10,6 +12,25 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
   const [step, setStep] = useState<number | null>(null)
   const [last, setLast] = useState<Msg>()
   const [action, setAction] = useState(lastAction)
+  const [outputs, setOutputs] = useState<Output[]>()
+  const [current, setCurrent] = useState<Output | null>(savedOutput)
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => getMixer().master.subscribe(bump), [])
+  async function findOutputs(autoPickController = false) {
+    setError(undefined)
+    try {
+      const list = await listOutputs()
+      setOutputs(list)
+      const ddj = list.find((o) => /ddj|pioneer/i.test(o.label))
+      if (autoPickController) {
+        if (!ddj) return setError('No DJ controller found among sound outputs. Is it plugged in?')
+        await useOutput(ddj)
+        setCurrent(ddj)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
   useEffect(() => onAction(setAction), [])
 
   useEffect(() => {
@@ -88,6 +109,30 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
           <span>{device || 'Not connected yet'}</span>
           <button type="button" className="pill" onClick={hookUp}>{device ? 'Reconnect' : 'Connect'}</button>
           <span className="hint">Chrome will ask to allow MIDI devices; choose Allow.</span>
+        </div>
+        <div className="ctl-sound">
+          <h3>Sound output</h3>
+          <p className="hint">
+            Now: <strong>{current?.label ?? 'your Mac’s default output'}</strong> · {getMixer().master.outputChannels === 4 ? 'speakers on outputs 1–2, headphones on 3–4' : 'stereo only (no separate headphones)'}
+          </p>
+          <div className="row-btns">
+            <button type="button" className="send" onClick={() => findOutputs(true)}>Use DDJ-SR for sound</button>
+            <button type="button" className="pill" onClick={() => findOutputs(false)}>Choose another…</button>
+          </div>
+          {outputs && (
+            <div className="row-btns">
+              {outputs.map((o) => (
+                <button key={o.deviceId} type="button" className="pill" aria-pressed={current?.deviceId === o.deviceId} onClick={async () => { await useOutput(o); setCurrent(o) }}>{o.label}</button>
+              ))}
+            </div>
+          )}
+          {/ddj|pioneer/i.test(current?.label ?? '') && getMixer().master.outputChannels < 4 && (
+            <div className="ctl-note">
+              <p><strong>Music is going to the controller (outputs 1–2).</strong> To hear it in your headphones, turn the controller’s headphone <strong>MIXING</strong> knob toward <strong>MASTER</strong>.</p>
+              <p>To <strong>pre-listen</strong> with 🎧 CUE (the next song in your headphones only), Chrome needs the controller as your Mac’s main sound output: <strong>System Settings › Sound › Output › PIONEER DDJ-SR</strong>, then refresh this page. Selector switches to separate speaker and headphone outputs by itself when they’re available.</p>
+            </div>
+          )}
+          <p className="hint">Chrome asks for microphone access only to show your sound devices; Selector never records.</p>
         </div>
         {error && <p className="side-note err">{error}</p>}
         {s ? (

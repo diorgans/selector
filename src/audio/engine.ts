@@ -29,6 +29,24 @@ export function eqKnobToDb(v: number): number {
 export class Master {
   readonly input: GainNode
   readonly output: GainNode
+  /** Headphone cue bus: channels with 🎧 on feed this (before their faders). */
+  readonly cue: GainNode
+  private readonly cueAmt: GainNode
+  private readonly masterAmt: GainNode
+  private readonly phones: GainNode
+  /** Headphones: 0 = only the cued decks, 1 = only the master mix. */
+  phonesMix = 0.25
+  phonesLevel = 0.8
+  /** How many output channels the current sound device has (4 on a DJ controller). */
+  outputChannels = 2
+  private listeners = new Set<() => void>()
+  subscribe(fn: () => void) {
+    this.listeners.add(fn)
+    return () => void this.listeners.delete(fn)
+  }
+  private changed() {
+    this.listeners.forEach((fn) => fn())
+  }
   constructor() {
     const c = audio()
     this.input = c.createGain()
@@ -49,12 +67,62 @@ export class Master {
     }
     clip.curve = curve
     this.output = c.createGain()
-    this.input.connect(limiter).connect(clip).connect(this.output).connect(c.destination)
+    this.input.connect(limiter).connect(clip).connect(this.output)
+
+    // Outputs 1-2: master (speakers). Outputs 3-4: headphones (cue blended with master).
+    // On a 2-channel device (laptop speakers) only 1-2 exist and the phones mix is dropped.
+    const out = new ChannelMergerNode(c, { numberOfInputs: 4 })
+    const mSplit = new ChannelSplitterNode(c, { numberOfOutputs: 2 })
+    this.output.connect(mSplit)
+    mSplit.connect(out, 0, 0)
+    mSplit.connect(out, 1, 1)
+    this.cue = c.createGain()
+    this.cueAmt = c.createGain()
+    this.masterAmt = c.createGain()
+    this.phones = c.createGain()
+    this.cue.connect(this.cueAmt).connect(this.phones)
+    this.output.connect(this.masterAmt).connect(this.phones)
+    const pSplit = new ChannelSplitterNode(c, { numberOfOutputs: 2 })
+    this.phones.connect(pSplit)
+    pSplit.connect(out, 0, 2)
+    pSplit.connect(out, 1, 3)
+    out.connect(c.destination)
+    this.configureOutput()
+    this.setPhones(this.phonesMix, this.phonesLevel)
+  }
+
+  /** Match the output to the device: 4 separate channels when it has them. */
+  configureOutput() {
+    const d = audio().destination
+    this.outputChannels = d.maxChannelCount >= 4 ? 4 : 2
+    d.channelCount = this.outputChannels
+    d.channelCountMode = 'explicit'
+    d.channelInterpretation = 'discrete'
+    this.changed()
+  }
+
+  setPhones(mix: number, level: number) {
+    this.phonesMix = Math.max(0, Math.min(1, mix))
+    this.phonesLevel = Math.max(0, Math.min(1, level))
+    const t = audio().currentTime
+    // Equal-power blend between the cue bus and the master mix.
+    this.cueAmt.gain.setTargetAtTime(Math.cos((this.phonesMix * Math.PI) / 2), t, 0.01)
+    this.masterAmt.gain.setTargetAtTime(Math.sin((this.phonesMix * Math.PI) / 2), t, 0.01)
+    this.phones.gain.setTargetAtTime(this.phonesLevel ** 2, t, 0.01)
+    this.changed()
   }
 }
 
-export type Knobs = { high: number; mid: number; low: number; filter: number; fader: number }
-const FLAT: Knobs = { high: 0.5, mid: 0.5, low: 0.5, filter: 0, fader: 1 }
+/** Send Selector's sound to a specific output device (e.g. the DJ controller). */
+export async function setOutputDevice(deviceId: string) {
+  const c = audio() as AudioContext & { setSinkId?: (id: string) => Promise<void> }
+  if (!c.setSinkId) throw new Error('This browser can’t choose a sound output. Use Chrome.')
+  await c.setSinkId(deviceId)
+  getMixer().master.configureOutput()
+}
+
+export type Knobs = { trim: number; high: number; mid: number; low: number; filter: number; fader: number; cue: number }
+const FLAT: Knobs = { trim: 0.5, high: 0.5, mid: 0.5, low: 0.5, filter: 0, fader: 1, cue: 0 }
 
 class Channel {
   /** Where each knob sits, so the UI can show automix moving them. */
@@ -76,6 +144,19 @@ class Channel {
   private readonly lp: BiquadFilterNode
   readonly fader: GainNode
   readonly xfade: GainNode
+  /** Gain before the EQ (the TRIM knob): ±12 dB, centre = unchanged. */
+  private readonly trim: GainNode
+  private readonly cueTap: GainNode
+  setTrim(knob: number) {
+    const db = (knob - 0.5) * 24
+    this.trim.gain.setTargetAtTime(Math.pow(10, db / 20), audio().currentTime, 0.01)
+    this.changed({ trim: knob })
+  }
+  /** 🎧: send this channel to the headphones. */
+  setCue(on: boolean) {
+    this.cueTap.gain.setTargetAtTime(on ? 1 : 0, audio().currentTime, 0.005)
+    this.changed({ cue: on ? 1 : 0 })
+  }
   /** Dry level after the filter: automix cuts it to let an echo tail ring out on its own. */
   private readonly dry: GainNode
   /** The deck's live effects unit (echo, reverb, phaser, flanger, trans, wah). */
@@ -86,6 +167,8 @@ class Channel {
   constructor(master: Master) {
     const c = audio()
     this.input = c.createGain()
+    this.trim = c.createGain()
+    this.cueTap = new GainNode(c, { gain: 0 })
     this.low = new BiquadFilterNode(c, { type: 'lowshelf', frequency: 220 })
     this.mid = new BiquadFilterNode(c, { type: 'peaking', frequency: 1000, Q: 0.7 })
     this.high = new BiquadFilterNode(c, { type: 'highshelf', frequency: 3500 })
@@ -95,8 +178,10 @@ class Channel {
     this.xfade = c.createGain()
     this.dry = c.createGain()
     this.fx = new FxRack(c)
-    this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fx.input)
+    this.input.connect(this.trim).connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fx.input)
     this.fx.output.connect(this.dry).connect(this.fader).connect(this.xfade).connect(master.input)
+    // Headphone cue: taken after EQ and effects, before the fader (what DJs call PFL).
+    this.fx.output.connect(this.cueTap).connect(master.cue)
     this.echoSend = new GainNode(c, { gain: 0 })
     this.echoDelay = new DelayNode(c, { maxDelayTime: 2, delayTime: 0.36 })
     const feedback = new GainNode(c, { gain: 0.55 })
@@ -169,7 +254,7 @@ class Channel {
     this.echoSend.gain.setTargetAtTime(0, t, 0.01)
     this.setFilter(0)
     this.setFader(1)
-    this.changed({ ...FLAT })
+    this.changed({ ...FLAT, trim: this.knobs.trim, cue: this.knobs.cue }) // your trim and 🎧 stay as set
   }
   /** One knob: left of centre sweeps a low-pass down, right sweeps a high-pass up. */
   setFilter(v: number) {

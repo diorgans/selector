@@ -18,6 +18,7 @@ import { LibraryTools } from './LibraryTools.tsx'
 import { applyGrids } from './grid.ts'
 import { ControllerSetup } from './ControllerSetup.tsx'
 import { connect as connectMidi, loadMap as loadMidiMap, setBrowseHandlers, startController } from './midi.ts'
+import { restoreOutput } from './output.ts'
 import { trackDrag } from './dnd.ts'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
@@ -101,6 +102,7 @@ export function App() {
   // If the controller was set up before, reconnect it quietly on load.
   useEffect(() => {
     if (Object.keys(loadMidiMap()).length) connectMidi().then(startController, () => {})
+    void restoreOutput() // back to the controller's sound card if it was chosen before
   }, [])
   const [query, setQuery] = useState('')
   const [keyFilter, setKeyFilter] = useState<string | null>(null)

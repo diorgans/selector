@@ -553,18 +553,30 @@ function ChannelStrip({ deck }: { deck: Deck }) {
   const [, bump] = useReducer((n: number) => n + 1, 0)
   useEffect(() => deck.channel.subscribe(bump), [deck])
   const k = deck.channel.knobs
-  const set = (key: keyof typeof k, v: number) => {
-    if (key === 'filter') deck.channel.setFilter(v)
-    else if (key === 'fader') deck.channel.setFader(v)
-    else deck.channel.setEq(key, v)
-  }
+  const ch = deck.channel
   return (
     <div className="strip" aria-label={`Channel ${deck.name}`}>
+      <Knob label="Trim" value={k.trim} onChange={(v) => ch.setTrim(v)} />
       {(['high', 'mid', 'low'] as const).map((b) => (
-        <Knob key={b} label={b === 'high' ? 'Hi' : b === 'mid' ? 'Mid' : 'Low'} value={k[b]} onChange={(v) => set(b, v)} className={k[b] <= 0.02 ? 'killed' : ''} />
+        <Knob key={b} label={b === 'high' ? 'Hi' : b === 'mid' ? 'Mid' : 'Low'} value={k[b]} onChange={(v) => ch.setEq(b, v)} className={k[b] <= 0.02 ? 'killed' : ''} />
       ))}
-      <Knob label="Filter" value={k.filter} min={-1} max={1} center={0} onChange={(v) => set('filter', v)} />
-      <Knob label={`Ch ${deck.name}`} value={k.fader} center={1} onChange={(v) => set('fader', v)} className="fader" />
+      <Knob label="Filter" value={k.filter} min={-1} max={1} center={0} onChange={(v) => ch.setFilter(v)} />
+      <Knob label={`Ch ${deck.name}`} value={k.fader} center={1} onChange={(v) => ch.setFader(v)} className="fader" />
+      <button type="button" className="cue-btn" aria-pressed={k.cue === 1} onClick={() => ch.setCue(k.cue !== 1)} title="Hear this deck in your headphones (before its fader)">🎧 CUE</button>
+    </div>
+  )
+}
+
+/** Headphones: blend between the cued decks and the master, and the level. */
+function PhonesControls({ mixer }: { mixer: Mixer }) {
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => mixer.master.subscribe(bump), [mixer])
+  const m = mixer.master
+  return (
+    <div className="phones" role="group" aria-label="Headphones">
+      <Knob label="🎧 Cue ⟷ Master" value={m.phonesMix} center={0.25} onChange={(v) => m.setPhones(v, m.phonesLevel)} />
+      <Knob label="🎧 Level" value={m.phonesLevel} center={0.8} onChange={(v) => m.setPhones(m.phonesMix, v)} />
+      {m.outputChannels < 4 && <p className="phones-note">Headphones need the controller as the sound output: open 🎛 Controller › Sound output.</p>}
     </div>
   )
 }
@@ -580,6 +592,7 @@ function MixerPanel({ mixer, children }: { mixer: Mixer; children?: React.ReactN
         <ChannelStrip deck={mixer.decks.B} />
       </div>
       <Knob label="A ⟷ B" value={mixer.crossfaderNow()} onChange={(v) => mixer.setCrossfader(v)} className="xfader" />
+      <PhonesControls mixer={mixer} />
       {children}
     </section>
   )

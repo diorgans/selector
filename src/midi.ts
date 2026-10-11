@@ -22,6 +22,8 @@ const deckSteps = (d: 'A' | 'B', side: string): Step[] => [
   { id: `${d}.hot2`, label: `${side} deck: pad 2`, how: 'Press pad 2.', kind: 'button' },
   { id: `${d}.hot3`, label: `${side} deck: pad 3`, how: 'Press pad 3.', kind: 'button' },
   { id: `${d}.hot4`, label: `${side} deck: pad 4`, how: 'Press pad 4.', kind: 'button' },
+  { id: `${d}.trim`, label: `${side} channel: TRIM`, how: `Turn the TRIM knob at the top of the ${side.toLowerCase()} channel.`, kind: 'knob' },
+  { id: `${d}.headcue`, label: `${side} channel: headphone CUE`, how: `Press the headphone CUE button for the ${side.toLowerCase()} channel (above its fader).`, kind: 'button' },
   { id: `${d}.high`, label: `${side} channel: HI`, how: `Turn the HI knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.mid`, label: `${side} channel: MID`, how: `Turn the MID knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.low`, label: `${side} channel: LOW`, how: `Turn the LOW knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
@@ -208,6 +210,8 @@ export function startController() {
       case 'reloop': if (pressed) deck.reloop(); break
       case 'hot1': case 'hot2': case 'hot3': case 'hot4': if (pressed) deck.hotCue(Number(ctl.slice(3)) - 1); break
       case 'high': case 'mid': case 'low': deck.channel.setEq(ctl, v / 127); break
+      case 'trim': deck.channel.setTrim(v / 127); break
+      case 'headcue': if (pressed) deck.channel.setCue(deck.channel.knobs.cue !== 1); break
       case 'filter': deck.channel.setFilter((v / 127) * 2 - 1); break
       case 'fader': deck.channel.setFader(v / 127); break
       case 'tempo': deck.setRate(1 + ((v / 127) * 2 - 1) * 0.08); break
@@ -230,6 +234,7 @@ export function startController() {
       light(loadMap()[`${d}.play`], mixer.decks[d].state.playing)
       light(loadMap()[`${d}.keylock`], mixer.decks[d].state.keyLock)
     })
+  for (const d of ['A', 'B'] as const) mixer.decks[d].channel.subscribe(() => light(loadMap()[`${d}.headcue`], mixer.decks[d].channel.knobs.cue === 1))
 }
 
 /**
@@ -247,6 +252,7 @@ export function ddjSrPreset(): MidiMap {
       [`${d}.play`]: n(ch, 0x0b), [`${d}.cue`]: n(ch, 0x0c), [`${d}.sync`]: n(ch, 0x58), [`${d}.keylock`]: n(ch, 0x1a),
       [`${d}.jog`]: cc(ch, 0x21, { rel: 'center' }), [`${d}.tempo`]: cc(ch, 0x00),
       [`${d}.hot1`]: n(padCh, 0x00), [`${d}.hot2`]: n(padCh, 0x01), [`${d}.hot3`]: n(padCh, 0x02), [`${d}.hot4`]: n(padCh, 0x03),
+      [`${d}.trim`]: cc(ch, 0x04), [`${d}.headcue`]: n(ch, 0x54),
       [`${d}.high`]: cc(ch, 0x07), [`${d}.mid`]: cc(ch, 0x0b), [`${d}.low`]: cc(ch, 0x0f), [`${d}.fader`]: cc(ch, 0x13), [`${d}.filter`]: cc(6, filterCc),
       [`${d}.loopauto`]: n(ch, 0x14), [`${d}.loophalf`]: n(ch, 0x12), [`${d}.loopdouble`]: n(ch, 0x13), [`${d}.loopin`]: n(ch, 0x10), [`${d}.loopout`]: n(ch, 0x11), [`${d}.reloop`]: n(ch, 0x4d),
       [`${d}.fx1`]: n(fxCh, 0x47), [`${d}.fx2`]: n(fxCh, 0x48), [`${d}.fx3`]: n(fxCh, 0x49),
