@@ -23,9 +23,17 @@ export function buildLibrary(
   apple?: { songs: AppleSong[]; playlists: ApplePlaylist[] },
   files: Track[] = [],
 ): Library {
-  // Scanned files rekordbox already knows (same path) aren't listed twice.
-  const known = new Set(rb.tracks.map((t) => t.location))
-  const tracks = [...rb.tracks, ...files.filter((f) => !known.has(f.location))].map((t) => ({ ...t, crates: [] as string[] }))
+  // Scanned files rekordbox already knows (same path) aren't listed twice. Paths are
+  // compared decoded, since rekordbox and Selector escape characters differently.
+  const plain = (loc: string) => {
+    try {
+      return decodeURIComponent(loc).normalize('NFC')
+    } catch {
+      return loc
+    }
+  }
+  const known = new Set(rb.tracks.map((t) => plain(t.location)))
+  const tracks = [...rb.tracks, ...files.filter((f) => !known.has(plain(f.location)))].map((t) => ({ ...t, crates: [] as string[] }))
   const byId = new Map(tracks.map((t) => [t.id, t]))
   const crates: Crate[] = []
 
@@ -89,11 +97,20 @@ async function mtime(path: string) {
   }
 }
 
-export async function loadLibrary(): Promise<Library> {
+let inflight: Promise<Library> | undefined
+
+/** The library, re-read at most every 30 s (or now, with `force`). Concurrent callers share one scan. */
+export async function loadLibrary(force = false): Promise<Library> {
+  if (inflight) return inflight
+  inflight = build(force).finally(() => (inflight = undefined))
+  return inflight
+}
+
+async function build(force: boolean): Promise<Library> {
   const [rbTime, appleTime] = await Promise.all([mtime(paths.rekordbox), mtime(paths.apple)])
   // Re-scan at most every 30 s so new downloads and a plugged-in drive show up without a restart.
   const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}`
-  if (cache?.key === key) return cache.library
+  if (!force && cache?.key === key) return cache.library
   // The rekordbox export is optional: without it Selector runs on music folders alone.
   const rb = rbTime === null
     ? { tracks: [], playlists: [], raw: new Map<string, RawTrack>() }
@@ -107,7 +124,7 @@ export async function loadLibrary(): Promise<Library> {
     else if (p && (await exists(p))) t.playable = true
     else t.blocked = 'missing'
   }
-  const library = buildLibrary(rb, apple, await scanFiles())
+  const library = buildLibrary(rb, apple, await scanFiles(undefined, force))
   const filePaths = new Map<string, string>()
   for (const t of library.tracks) {
     const p = t.playable ? locationToPath(t.location) : null

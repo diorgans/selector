@@ -80,6 +80,14 @@ function localApi(): Plugin {
         GET: async (_b, s) => (await load(s, '/server/sessions.ts')).listSessions(),
         PUT: async (body, s) => (await load(s, '/server/sessions.ts')).saveSession(body),
       })
+      route(server, '/api/folders', {
+        GET: async (_b, s) => (await load(s, '/server/config.ts')).listDrives(),
+        POST: async (body, s) => {
+          const out = await (await load(s, '/server/config.ts')).changeFolders(body as { add?: string; remove?: string })
+          await (await load(s, '/server/library.ts')).loadLibrary(true) // scan now, so the reply means "done"
+          return out
+        },
+      })
       route(server, '/api/export', { POST: async (body, s) => (await load(s, '/server/sets.ts')).exportSets(body) })
     },
   }

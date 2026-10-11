@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { toCamelot } from '../shared/camelot.ts'
+import { getMusicDirs } from './config.ts'
 import type { Track } from '../shared/types.ts'
 
 // Music files Noah owns: found by scanning folders (downloaded iCloud songs land
@@ -17,9 +18,6 @@ const MIME: Record<string, string> = {
   '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.flac': 'audio/flac',
 }
 
-export const musicDirs = (process.env.SELECTOR_MUSIC_DIRS ?? [join(homedir(), 'Music', 'Music', 'Media.localized'), join(homedir(), '.selector', 'demo')].join(':'))
-  .split(':')
-  .filter(Boolean)
 
 const SCAN_CACHE = process.env.SELECTOR_SCAN_CACHE ?? join(homedir(), '.selector', 'scan-cache.json')
 
@@ -57,7 +55,13 @@ async function walk(dir: string, out: string[] = []): Promise<string[]> {
 type Cached = { mtimeMs: number; size: number; track: Track }
 
 /** Scan the music folders; tags are read once per file and cached by size + modified time. */
-export async function scanFiles(dirs = musicDirs): Promise<Track[]> {
+/**
+ * Scan the music folders. External drives can be slow to list (minutes for a big
+ * USB drive), so a drive already in the cache is only walked again when `force`
+ * is set (Rescan / adding it); folders on the Mac are re-walked every time.
+ */
+export async function scanFiles(dirsIn?: string[], force = false): Promise<Track[]> {
+  const dirs = dirsIn ?? (await getMusicDirs())
   let cache: Record<string, Cached> = {}
   try {
     cache = JSON.parse(await readFile(SCAN_CACHE, 'utf8'))
@@ -65,12 +69,43 @@ export async function scanFiles(dirs = musicDirs): Promise<Track[]> {
     /* first scan */
   }
   const { parseFile } = await import('music-metadata')
-  const paths = (await Promise.all(dirs.map((d) => walk(d)))).flat()
   const next: Record<string, Cached> = {}
   const tracks: Track[] = []
+  // A folder that isn't there right now (drive unplugged): keep its songs, marked offline.
+  const present: string[] = []
+  for (const d of dirs) {
+    if (await stat(d).then((s) => s.isDirectory(), () => false)) present.push(d)
+    else
+      for (const [path, hit] of Object.entries(cache))
+        if (path.startsWith(`${d}/`)) {
+          next[path] = hit
+          tracks.push({ ...hit.track, playable: false, blocked: 'missing' })
+        }
+  }
+  const cachedUnder = (d: string) => Object.keys(cache).filter((p) => p.startsWith(`${d}/`))
+  const fromCache = new Set<string>()
+  const paths = (
+    await Promise.all(
+      present.map(async (d) => {
+        const known = cachedUnder(d)
+        if (!force && d.startsWith('/Volumes/') && known.length) {
+          known.forEach((p) => fromCache.add(p))
+          return known
+        }
+        return walk(d)
+      }),
+    )
+  ).flat()
   for (const path of paths) {
-    const st = await stat(path)
     const hit = cache[path]
+    if (fromCache.has(path) && hit) {
+      // Trusted from the last walk of this drive (no per-file disk access).
+      next[path] = hit
+      tracks.push(hit.track)
+      continue
+    }
+    const st = await stat(path).catch(() => null)
+    if (!st) continue
     if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
       next[path] = hit
       tracks.push(hit.track)
@@ -78,7 +113,8 @@ export async function scanFiles(dirs = musicDirs): Promise<Track[]> {
     }
     let meta: Awaited<ReturnType<typeof parseFile>> | undefined
     try {
-      meta = await parseFile(path, { duration: true, skipCovers: true })
+      // duration: false reads only the headers, so scanning a USB drive stays quick.
+      meta = await parseFile(path, { duration: false, skipCovers: true })
     } catch {
       /* unreadable tags: fall back to the file name */
     }
