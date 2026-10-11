@@ -70,10 +70,26 @@ export function setBrowseHandlers(b: Browse) {
 const KEY = 'selector-midi-map'
 export function loadMap(): MidiMap {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '{}')
+    const raw: MidiMap = JSON.parse(localStorage.getItem(KEY) ?? '{}')
+    // Drop controls that no longer exist (e.g. the old single "FX on"), so they can't
+    // swallow a button that is now mapped to something else.
+    const known = new Set(STEPS.map((s) => s.id))
+    return Object.fromEntries(Object.entries(raw).filter(([id]) => known.has(id)))
   } catch {
     return {}
   }
+}
+
+/** What the last controller message did, for the setup window. */
+export let lastAction = ''
+const actionListeners = new Set<(s: string) => void>()
+export function onAction(fn: (s: string) => void) {
+  actionListeners.add(fn)
+  return () => void actionListeners.delete(fn)
+}
+function report(s: string) {
+  lastAction = s
+  actionListeners.forEach((fn) => fn(s))
 }
 export function saveMap(m: MidiMap) {
   try {
@@ -96,6 +112,8 @@ export const same = (b: Binding, m: Msg) => b.kind === m.kind && b.channel === m
 // --- Connection -----------------------------------------------------------------
 
 type Listener = (m: Msg) => void
+let lastSig = ''
+let lastAt = 0
 let access: MIDIAccess | undefined
 const listeners = new Set<Listener>()
 export let deviceName = ''
@@ -110,7 +128,15 @@ export async function connect(): Promise<string> {
       names.push(input.name ?? 'MIDI device')
       input.onmidimessage = (e) => {
         const m = e.data && parse(e.data)
-        if (m) listeners.forEach((fn) => fn(m))
+        if (!m) return
+        // Some setups deliver the same message twice (two ports for one device); a
+        // doubled press would switch a toggle on and straight back off.
+        const sig = `${m.kind}${m.channel}:${m.number}:${m.value}`
+        const now = performance.now()
+        if (m.kind === 'note' && sig === lastSig && now - lastAt < 15) return
+        lastSig = sig
+        lastAt = now
+        listeners.forEach((fn) => fn(m))
       }
     })
     deviceName = names.find((n) => /ddj|pioneer/i.test(n)) ?? names[0] ?? ''
@@ -145,8 +171,12 @@ export function startController() {
   onMessage((m) => {
     const map = loadMap()
     const hit = Object.entries(map).find(([, b]) => same(b, m))
-    if (!hit) return
+    if (!hit) {
+      if (m.kind === 'note' && m.value > 0) report(`button #${m.number} (ch ${m.channel + 1}): no control mapped to it`)
+      return
+    }
     const [id, b] = hit
+    if (m.kind === 'note' && m.value > 0) report(`${STEPS.find((s) => s.id === id)?.label ?? id} → done`)
     const [d, ctl] = id.includes('.') ? (id.split('.') as ['A' | 'B', string]) : [null, id]
     const v = b.invert ? 127 - m.value : m.value
     if (!d) {

@@ -466,3 +466,4 @@ tbody tr.cursor { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--ac
 .grid-ctl { display: inline-flex; gap: 2px; align-items: center; margin-left: auto; }
 .grid-label { font: 700 9px var(--num); color: var(--muted); letter-spacing: 0.08em; margin-right: 2px; }
 .grid-ctl button { padding: 0 6px; }
+.ctl-action { margin: 0; font: 700 13px var(--num); color: var(--mix); }

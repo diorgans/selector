@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { connect, detectRel, deviceName, loadMap, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
+import { connect, detectRel, deviceName, lastAction, loadMap, onAction, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
 
 /** The controller window: connect, learn each control, then use it. */
 export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -9,6 +9,8 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
   const [map, setMap] = useState(loadMap)
   const [step, setStep] = useState<number | null>(null)
   const [last, setLast] = useState<Msg>()
+  const [action, setAction] = useState(lastAction)
+  useEffect(() => onAction(setAction), [])
 
   useEffect(() => {
     const d = ref.current
@@ -35,11 +37,14 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
   useEffect(() => {
     if (step === null) return
     const s = STEPS[step]
-    const taken = (m: Msg) => Object.entries(map).some(([id, b]) => id !== s.id && same(b, m))
+    // Knobs: ignore controls already mapped (they jitter). Buttons: re-learning takes the
+    // button over from any other control, so a learn can't silently record the wrong one.
+    const taken = (m: Msg) => s.kind !== 'button' && Object.entries(map).some(([id, b]) => id !== s.id && same(b, m))
     const counts = new Map<string, { m: Msg; n: number; values: number[] }>()
     let timer = 0
     const done = (b: Binding) => {
-      const next = { ...map, [s.id]: b }
+      const next = Object.fromEntries(Object.entries(map).filter(([id, x]) => id === s.id || !same(x, { ...b, value: 0 })))
+      next[s.id] = b
       setMap(next)
       saveMap(next)
       setStep(step + 1 < STEPS.length ? step + 1 : null)
@@ -102,6 +107,7 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
           </div>
         )}
         <p className="hint">Last message: {last ? `${last.kind === 'note' ? 'button' : 'knob'} ch ${last.channel + 1} #${last.number} = ${last.value}` : 'none yet'}</p>
+        <p className="ctl-action" role="status">Last action: {action || 'press a mapped button'}</p>
         <ul className="ctl-list">
           {STEPS.map((st, i) => (
             <li key={st.id} className={map[st.id] ? 'ok' : ''}>
