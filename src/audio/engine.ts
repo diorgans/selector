@@ -145,12 +145,12 @@ class Channel {
   private readonly lp: BiquadFilterNode
   readonly fader: GainNode
   readonly xfade: GainNode
-  /** Gain before the EQ (the TRIM knob): ±12 dB, centre = unchanged. */
+  /** The TRIM knob: all the way down is silent, centre is unchanged, all the way up is +9 dB. */
   private readonly trim: GainNode
   private readonly cueTap: GainNode
   setTrim(knob: number) {
-    const db = (knob - 0.5) * 24
-    this.trim.gain.setTargetAtTime(Math.pow(10, db / 20), audio().currentTime, 0.01)
+    const gain = knob >= 0.5 ? Math.pow(10, ((knob - 0.5) / 0.5) * 9 / 20) : (knob / 0.5) ** 2
+    this.trim.gain.setTargetAtTime(gain, audio().currentTime, 0.01)
     this.changed({ trim: knob })
   }
   /** 🎧: send this channel to the headphones. */
@@ -864,6 +864,7 @@ export class Mixer {
   }
   constructor() {
     this.setCrossfader(0.5)
+    this.setMasterVolume(this.masterVolume)
   }
   /** Equal-power curve: the middle is not quieter than either side. */
   setCrossfader(x: number) {
@@ -876,8 +877,24 @@ export class Mixer {
     this.decks.A.channel.xfade.gain.setTargetAtTime(Math.cos((this.crossfader * Math.PI) / 2), t, 0.005)
     this.decks.B.channel.xfade.gain.setTargetAtTime(Math.sin((this.crossfader * Math.PI) / 2), t, 0.005)
   }
+  /** Master volume (0..1): 1 = full level, 0.8 ≈ -5 dB, 0 = silent. Remembered. */
+  masterVolume = (() => {
+    try {
+      const v = Number(localStorage.getItem('selector-master'))
+      return v >= 0 && v <= 1 && localStorage.getItem('selector-master') !== null ? v : 0.8
+    } catch {
+      return 0.8
+    }
+  })()
   setMasterVolume(v: number) {
-    this.master.output.gain.setTargetAtTime(dbToGain(-24 * (1 - v)) * (v > 0 ? 1 : 0), audio().currentTime, 0.01)
+    this.masterVolume = Math.max(0, Math.min(1, v))
+    this.master.output.gain.setTargetAtTime(this.masterVolume > 0 ? dbToGain(-24 * (1 - this.masterVolume)) : 0, audio().currentTime, 0.01)
+    try {
+      localStorage.setItem('selector-master', String(this.masterVolume))
+    } catch {
+      /* this visit only */
+    }
+    this.listeners.forEach((fn) => fn())
   }
 }
 

@@ -629,6 +629,7 @@ function MixerPanel({ mixer, children }: { mixer: Mixer; children?: React.ReactN
         <ChannelStrip deck={mixer.decks.B} />
       </div>
       <Knob label="A ⟷ B" value={mixer.crossfaderNow()} onChange={(v) => mixer.setCrossfader(v)} className="xfader" />
+      <Knob label={`Master ${mixer.masterVolume === 0 ? '(muted)' : `${(-24 * (1 - mixer.masterVolume)).toFixed(0)} dB`}`} value={mixer.masterVolume} center={0.8} onChange={(v) => mixer.setMasterVolume(v)} className="master-vol" />
       <PhonesControls mixer={mixer} />
       {children}
     </section>
