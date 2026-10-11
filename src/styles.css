@@ -500,3 +500,6 @@ tbody tr.cursor { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--ac
 .beatcount .lights i.on.one { background: var(--wf-cue); box-shadow: 0 0 6px var(--wf-cue); }
 .beatcount .phrase { padding: 1px 7px; border-radius: 999px; color: #0b0b14; background: var(--pc); white-space: nowrap; }
 .beatcount { min-height: 20px; white-space: nowrap; overflow: hidden; }
+.fxslot { grid-template-rows: auto auto auto; }
+.fxslot .fx-beat { grid-column: 1 / -1; grid-row: 3; font: 600 10px var(--num); color: var(--muted); }
+.fxslot .fx-beat:disabled { opacity: 0.4; }

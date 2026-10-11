@@ -247,9 +247,13 @@ export class FxRack {
     for (const s of this.slots) s.setBeats(b)
     this.listeners.forEach((fn) => fn())
   }
-  /** Step the shared beat length (the BEATS knob): -1 shorter, +1 longer. */
+  /** The BEATS knob: step the beat length of the effects that are on (all three if none are). */
   stepBeats(dir: number) {
-    const i = BEAT_CHOICES.indexOf(this.beats as (typeof BEAT_CHOICES)[number])
-    this.setBeats(BEAT_CHOICES[Math.max(0, Math.min(BEAT_CHOICES.length - 1, (i < 0 ? 2 : i) + Math.sign(dir)))])
+    const targets = this.slots.some((s) => s.on) ? this.slots.filter((s) => s.on) : this.slots
+    for (const s of targets) {
+      const i = BEAT_CHOICES.indexOf(s.beats as (typeof BEAT_CHOICES)[number])
+      s.setBeats(BEAT_CHOICES[Math.max(0, Math.min(BEAT_CHOICES.length - 1, (i < 0 ? 2 : i) + Math.sign(dir)))])
+    }
+    this.listeners.forEach((fn) => fn())
   }
 }

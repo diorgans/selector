@@ -529,14 +529,7 @@ function FxControls({ deck }: { deck: Deck }) {
   useEffect(() => rack.subscribe(bump), [rack])
   return (
     <div className="fxrack" role="group" aria-label={`Deck ${deck.name} effects`}>
-      <div className="fxrack-head">
-        <span className="fxrack-label">FX</span>
-        <div className="fx-beats" role="group" aria-label="Beat length for this deck's effects">
-          {BEAT_CHOICES.map((b) => (
-            <button key={b} type="button" aria-pressed={rack.beats === b} onClick={() => rack.setBeats(b)} title={`${beatLabel(b)} beat${b > 1 ? 's' : ''}`}>{beatLabel(b)}</button>
-          ))}
-        </div>
-      </div>
+      <div className="fxrack-head"><span className="fxrack-label">FX</span></div>
       <div className="fxslots">
         {rack.slots.map((fx, i) => {
           const info = FX_INFO[fx.type]
@@ -546,6 +539,9 @@ function FxControls({ deck }: { deck: Deck }) {
                 {(Object.keys(FX_INFO) as FxType[]).map((t) => <option key={t} value={t}>{FX_INFO[t].name}</option>)}
               </select>
               <input type="range" min={0} max={1} step={0.01} value={fx.amount} onChange={(e) => fx.setAmount(Number(e.target.value))} aria-label={`${info.name} level, deck ${deck.name}`} onDoubleClick={() => fx.setAmount(0.5)} />
+              <select className="fx-beat" value={fx.beats} disabled={!info.synced} onChange={(e) => fx.setBeats(Number(e.target.value))} aria-label={`${info.name} beats, deck ${deck.name}`} title={info.synced ? 'Beat length for this effect' : 'This effect doesn’t follow the beat'}>
+                {BEAT_CHOICES.map((b) => <option key={b} value={b}>{beatLabel(b)} beat{b > 1 ? 's' : ''}</option>)}
+              </select>
               <button type="button" className="fx-on" aria-pressed={fx.on} onClick={() => fx.setOn(!fx.on)} aria-label={`${fx.on ? 'Turn off' : 'Turn on'} ${info.name} (effect ${i + 1}) on deck ${deck.name}${i === 0 ? ` (${FX_KEYS[deck.name]})` : ''}`}>
                 {i + 1}{i === 0 && <kbd>{FX_KEYS[deck.name]}</kbd>}
               </button>
