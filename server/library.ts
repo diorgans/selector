@@ -1,4 +1,4 @@
-import { access, readFile, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Crate, Library, Track } from '../shared/types.ts'
@@ -107,17 +107,31 @@ export async function loadLibrary(force = false): Promise<Library> {
   return inflight
 }
 
+// The exports are big (the Music library XML is ~20 MB): parse each only when its file changes.
+let parsed: { rbTime: number | null; appleTime: number | null; rb: ReturnType<typeof parseRekordboxXml>; apple?: ReturnType<typeof parseAppleLibrary> } | undefined
+let merged = { version: -1, at: 0 }
+
 async function build(force: boolean): Promise<Library> {
   const [rbTime, appleTime] = await Promise.all([mtime(paths.rekordbox), mtime(paths.apple)])
   // Re-scan at most every 30 s so new downloads and a plugged-in drive show up without a restart.
-  // New analysis results (every few seconds while it runs) also trigger a re-merge.
-  const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}:${analysisVersion()}`
-  if (!force && cache?.key === key) return cache.library
+  // New analysis results re-merge at most every 15 s while a batch runs.
+  const v = analysisVersion()
+  const analysisDue = v !== merged.version && Date.now() - merged.at > 15_000
+  const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}`
+  if (!force && cache?.key === key && !analysisDue) return cache.library
+  merged = { version: v, at: Date.now() }
   // The rekordbox export is optional: without it Selector runs on music folders alone.
-  const rb = rbTime === null
-    ? { tracks: [], playlists: [], raw: new Map<string, RawTrack>() }
-    : parseRekordboxXml(await readFile(paths.rekordbox, 'utf8'))
-  const apple = appleTime === null ? undefined : parseAppleLibrary(await readFile(paths.apple, 'utf8'))
+  if (!parsed || parsed.rbTime !== rbTime || parsed.appleTime !== appleTime) {
+    parsed = {
+      rbTime,
+      appleTime,
+      rb: rbTime === null ? { tracks: [], playlists: [], raw: new Map<string, RawTrack>() } : parseRekordboxXml(await readFile(paths.rekordbox, 'utf8')),
+      apple: appleTime === null ? undefined : parseAppleLibrary(await readFile(paths.apple, 'utf8')),
+    }
+  }
+  // Fresh copies each build: playability and analysis are filled in below.
+  const rb = { ...parsed.rb, tracks: parsed.rb.tracks.map((t) => ({ ...t })) }
+  const apple = parsed.apple
   // rekordbox's file tracks: playable only if the file is there right now (e.g. an external drive is plugged in).
   for (const t of rb.tracks) {
     if (t.source !== 'file') continue
@@ -140,8 +154,7 @@ async function build(force: boolean): Promise<Library> {
 
 async function exists(p: string) {
   try {
-    await access(p)
-    return true
+    return (await stat(p)).isFile() // a folder at that path is not a song
   } catch {
     return false
   }

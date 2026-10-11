@@ -179,7 +179,7 @@ export function App() {
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
         s: () => A.syncTo(B), k: () => B.syncTo(A),
-        e: () => A.channel.fx.setOn(!A.channel.fx.on), i: () => B.channel.fx.setOn(!B.channel.fx.on),
+        e: () => A.channel.fx.slots[0].setOn(!A.channel.fx.slots[0].on), i: () => B.channel.fx.slots[0].setOn(!B.channel.fx.slots[0].on),
         z: () => selected?.playable && loadTo('A', selected), m: () => selected?.playable && loadTo('B', selected),
         ArrowLeft: () => m.setCrossfader(m.crossfader - 0.05), ArrowRight: () => m.setCrossfader(m.crossfader + 0.05),
       }
@@ -194,21 +194,37 @@ export function App() {
   })
 
   // The controller's browse knob moves the selection; LOAD sends it to a deck.
-  const browseState = useRef({ visible: [] as Track[], selected: undefined as Track | undefined })
-  browseState.current = { visible, selected }
+  // While the knob turns, only a highlight moves (direct and cheap, so every song it
+  // passes is visible); the full selection (suggestions, wheel) follows once it stops.
+  const browseState = useRef({ visible: [] as Track[], selected: undefined as Track | undefined, cursor: undefined as Track | undefined, timer: 0 })
+  browseState.current.visible = visible
+  browseState.current.selected = selected
   useEffect(() => {
     setBrowseHandlers({
       move: (steps) => {
-        const { visible, selected } = browseState.current
-        if (!visible.length) return
-        const i = selected ? visible.findIndex((t) => t.id === selected.id) : -1
-        const next = visible[Math.max(0, Math.min(visible.length - 1, i + steps))]
-        setSelected(next)
-        requestAnimationFrame(() => document.querySelector('tbody tr.sel')?.scrollIntoView({ block: 'nearest' }))
+        const b = browseState.current
+        if (!b.visible.length) return
+        const from = b.cursor ?? b.selected
+        const i = from ? b.visible.findIndex((t) => t.id === from.id) : -1
+        const next = b.visible[Math.max(0, Math.min(b.visible.length - 1, i + steps))]
+        b.cursor = next
+        document.querySelector('tbody tr.cursor')?.classList.remove('cursor')
+        const row = document.querySelector(`tbody tr[data-id="${CSS.escape(next.id)}"]`)
+        row?.classList.add('cursor')
+        row?.scrollIntoView({ block: 'nearest' })
+        clearTimeout(b.timer)
+        b.timer = window.setTimeout(() => {
+          setSelected(next)
+          b.cursor = undefined
+          document.querySelector('tbody tr.cursor')?.classList.remove('cursor')
+        }, 220)
       },
       load: (deck) => {
-        const t = browseState.current.selected
-        if (t?.playable) void getMixer().decks[deck].load(t)
+        const t = browseState.current.cursor ?? browseState.current.selected
+        if (t?.playable) {
+          setSelected(t)
+          void getMixer().decks[deck].load(t)
+        }
       },
     })
   }, [])
@@ -312,7 +328,7 @@ export function App() {
             </thead>
             <tbody>
               {visible.map((t) => (
-                <tr key={t.id} className={`${selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''}${t.playable ? '' : ' locked'}`} onClick={() => setSelected(t)} {...trackDrag(t)}>
+                <tr key={t.id} data-id={t.id} className={`${selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''}${t.playable ? '' : ' locked'}`} onClick={() => setSelected(t)} {...trackDrag(t)}>
                   <td className="load">
                     {t.playable ? (
                       <>

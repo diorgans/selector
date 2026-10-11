@@ -476,30 +476,37 @@ function AutomixPanel({ automix }: { automix: Automix }) {
 const FX_KEYS = { A: 'E', B: 'I' }
 const beatLabel = (b: number) => (b === 0.25 ? '¼' : b === 0.5 ? '½' : String(b))
 
-/** Live effects for one deck: choose an effect, its beat length and amount, then switch it on. */
+/** Three effect slots for one deck (like the DDJ-SR): pick each effect, its level and on/off; one shared beat length. */
 function FxControls({ deck }: { deck: Deck }) {
-  const fx = deck.channel.fx
+  const rack = deck.channel.fx
   const [, bump] = useReducer((n: number) => n + 1, 0)
-  useEffect(() => fx.subscribe(bump), [fx])
-  const info = FX_INFO[fx.type]
+  useEffect(() => rack.subscribe(bump), [rack])
   return (
-    <div className={`fx ${fx.on ? 'on' : ''}`} role="group" aria-label={`Deck ${deck.name} effects`}>
-      <select value={fx.type} onChange={(e) => fx.setType(e.target.value as FxType)} aria-label={`Effect for deck ${deck.name}`} title={info.hint}>
-        {(Object.keys(FX_INFO) as FxType[]).map((t) => <option key={t} value={t}>{FX_INFO[t].name}</option>)}
-      </select>
-      <div className="fx-beats" role="group" aria-label="Beat length">
-        {BEAT_CHOICES.map((b) => (
-          <button key={b} type="button" aria-pressed={fx.beats === b} disabled={!info.synced} onClick={() => fx.setBeats(b)} title={`${beatLabel(b)} beat${b > 1 ? 's' : ''}`}>{beatLabel(b)}</button>
-        ))}
+    <div className="fxrack" role="group" aria-label={`Deck ${deck.name} effects`}>
+      <div className="fxrack-head">
+        <span className="fxrack-label">FX</span>
+        <div className="fx-beats" role="group" aria-label="Beat length for this deck's effects">
+          {BEAT_CHOICES.map((b) => (
+            <button key={b} type="button" aria-pressed={rack.beats === b} onClick={() => rack.setBeats(b)} title={`${beatLabel(b)} beat${b > 1 ? 's' : ''}`}>{beatLabel(b)}</button>
+          ))}
+        </div>
       </div>
-      <button type="button" className="fx-on" aria-pressed={fx.on} aria-keyshortcuts={FX_KEYS[deck.name]} onClick={() => fx.setOn(!fx.on)} aria-label={`${fx.on ? 'Turn off' : 'Turn on'} ${info.name} on deck ${deck.name} (${FX_KEYS[deck.name]})`}>
-        FX<kbd>{FX_KEYS[deck.name]}</kbd>
-      </button>
-      <label className="fx-amount">
-        <span>Amount</span>
-        <input type="range" min={0} max={1} step={0.01} value={fx.amount} onChange={(e) => fx.setAmount(Number(e.target.value))} aria-label={`${info.name} amount, deck ${deck.name}`} onDoubleClick={() => fx.setAmount(0.5)} />
-        <span className="pct">{Math.round(fx.amount * 100)}%</span>
-      </label>
+      <div className="fxslots">
+        {rack.slots.map((fx, i) => {
+          const info = FX_INFO[fx.type]
+          return (
+            <div key={i} className={`fxslot ${fx.on ? 'on' : ''}`}>
+              <select value={fx.type} onChange={(e) => fx.setType(e.target.value as FxType)} aria-label={`Effect ${i + 1}, deck ${deck.name}`} title={info.hint}>
+                {(Object.keys(FX_INFO) as FxType[]).map((t) => <option key={t} value={t}>{FX_INFO[t].name}</option>)}
+              </select>
+              <input type="range" min={0} max={1} step={0.01} value={fx.amount} onChange={(e) => fx.setAmount(Number(e.target.value))} aria-label={`${info.name} level, deck ${deck.name}`} onDoubleClick={() => fx.setAmount(0.5)} />
+              <button type="button" className="fx-on" aria-pressed={fx.on} onClick={() => fx.setOn(!fx.on)} aria-label={`${fx.on ? 'Turn off' : 'Turn on'} ${info.name} (effect ${i + 1}) on deck ${deck.name}${i === 0 ? ` (${FX_KEYS[deck.name]})` : ''}`}>
+                {i + 1}{i === 0 && <kbd>{FX_KEYS[deck.name]}</kbd>}
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

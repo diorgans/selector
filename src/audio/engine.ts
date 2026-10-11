@@ -5,7 +5,7 @@
 
 import type { Track } from '../../shared/types.ts'
 import { computeWaveform, type Waveform } from './waveform.ts'
-import { FxUnit } from './fx.ts'
+import { FxRack } from './fx.ts'
 
 let ctx: AudioContext | undefined
 let stretchReady: Promise<void> | undefined
@@ -79,7 +79,7 @@ class Channel {
   /** Dry level after the filter: automix cuts it to let an echo tail ring out on its own. */
   private readonly dry: GainNode
   /** The deck's live effects unit (echo, reverb, phaser, flanger, trans, wah). */
-  readonly fx: FxUnit
+  readonly fx: FxRack
   /** Beat-synced echo: a send into a feedback delay that goes straight to the master. */
   private readonly echoSend: GainNode
   private readonly echoDelay: DelayNode
@@ -94,7 +94,7 @@ class Channel {
     this.fader = c.createGain()
     this.xfade = c.createGain()
     this.dry = c.createGain()
-    this.fx = new FxUnit(c)
+    this.fx = new FxRack(c)
     this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fx.input)
     this.fx.output.connect(this.dry).connect(this.fader).connect(this.xfade).connect(master.input)
     this.echoSend = new GainNode(c, { gain: 0 })

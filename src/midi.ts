@@ -26,7 +26,11 @@ const deckSteps = (d: 'A' | 'B', side: string): Step[] => [
   { id: `${d}.low`, label: `${side} channel: LOW`, how: `Turn the LOW knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.filter`, label: `${side} channel: FILTER`, how: `Turn the FILTER knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.fader`, label: `${side} channel: fader`, how: `Move the ${side.toLowerCase()} channel fader up and down.`, kind: 'knob' },
-  { id: `${d}.fx`, label: `${side} deck: FX on`, how: `Press the first FX button (FX 1) for the ${side.toLowerCase()} deck.`, kind: 'button' },
+  ...[1, 2, 3].flatMap((n): Step[] => [
+    { id: `${d}.fx${n}`, label: `${side} FX ${n}: on/off`, how: `Press FX button ${n} on the ${side.toLowerCase()} side.`, kind: 'button' },
+    { id: `${d}.fx${n}lvl`, label: `${side} FX ${n}: level`, how: `Turn the FX ${n} knob above it.`, kind: 'knob' },
+  ]),
+  { id: `${d}.fxbeats`, label: `${side} FX: beats`, how: `Turn the FX BEATS knob on the ${side.toLowerCase()} side a few clicks (skip if yours has none).`, kind: 'encoder' },
 ]
 
 export const STEPS: Step[] = [
@@ -140,7 +144,7 @@ export function startController() {
     const v = b.invert ? 127 - m.value : m.value
     if (!d) {
       if (ctl === 'xfader') mixer.setCrossfader(v / 127)
-      if (ctl === 'browse') browse?.move(Math.sign(relative(m.value, b.rel)))
+      if (ctl === 'browse') browse?.move(relative(m.value, b.rel)) // fast turns send bigger steps
       return
     }
     const deck: Deck = mixer.decks[d]
@@ -150,7 +154,13 @@ export function startController() {
       case 'play': if (pressed) deck.toggle(); break
       case 'cue': if (pressed) deck.cue(); break
       case 'sync': if (pressed) deck.syncTo(other); break
-      case 'fx': if (pressed) deck.channel.fx.setOn(!deck.channel.fx.on); break
+      case 'fx1': case 'fx2': case 'fx3': {
+        const slot = deck.channel.fx.slots[Number(ctl[2]) - 1]
+        if (pressed) slot.setOn(!slot.on)
+        break
+      }
+      case 'fx1lvl': case 'fx2lvl': case 'fx3lvl': deck.channel.fx.slots[Number(ctl[2]) - 1].setAmount(v / 127); break
+      case 'fxbeats': deck.channel.fx.stepBeats(relative(m.value, b.rel)); break
       case 'load': if (pressed) browse?.load(d); break
       case 'hot1': case 'hot2': case 'hot3': case 'hot4': if (pressed) deck.hotCue(Number(ctl.slice(3)) - 1); break
       case 'high': case 'mid': case 'low': deck.channel.setEq(ctl, v / 127); break

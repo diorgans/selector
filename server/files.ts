@@ -4,7 +4,6 @@ import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promi
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { dirname, extname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { toCamelot } from '../shared/camelot.ts'
 import { getMusicDirs } from './config.ts'
 import type { Track } from '../shared/types.ts'
@@ -24,12 +23,18 @@ const SCAN_CACHE = process.env.SELECTOR_SCAN_CACHE ?? join(homedir(), '.selector
 /** rekordbox writes paths as file://localhost/Users/...; turn one into a plain path (or null for streaming). */
 export function locationToPath(location: string): string | null {
   if (!location.startsWith('file://localhost/')) return null
+  // Decoded by hand, not as a URL: a URL parser would treat "#" or "?" in a file
+  // name (e.g. a folder called "#FFFF00") as the start of a fragment and cut the path short.
+  const rest = location.slice('file://localhost'.length)
   try {
-    return fileURLToPath(location.replace('file://localhost/', 'file:///'))
+    return decodeURIComponent(rest)
   } catch {
-    return null
+    return rest
   }
 }
+
+/** The reverse: a file path as a rekordbox-style location, with "#", "?" and "%" escaped too. */
+export const pathToLocation = (path: string) => `file://localhost${encodeURI(path).replace(/#/g, '%23').replace(/\?/g, '%3F')}`
 
 export const fileId = (path: string) => `f${createHash('sha1').update(path).digest('hex').slice(0, 12)}`
 
@@ -131,7 +136,7 @@ export async function scanFiles(dirsIn?: string[], force = false): Promise<Track
       key: toCamelot(c?.key),
       durationSec: Math.round(meta?.format.duration ?? 0),
       source: 'file',
-      location: `file://localhost${encodeURI(path)}`,
+      location: pathToLocation(path),
       playCount: 0,
       rating: 0,
       dateAdded: new Date(st.birthtimeMs).toISOString().slice(0, 10),
@@ -150,7 +155,14 @@ export async function scanFiles(dirsIn?: string[], force = false): Promise<Track
 
 /** Stream a library file to the browser, with byte ranges so seeking works. */
 export async function serveAudio(path: string, req: IncomingMessage, res: ServerResponse) {
-  const st = await stat(path)
+  const st = await stat(path).catch(() => null)
+  if (!st?.isFile()) {
+    res.statusCode = 404
+    return res.end('Not a playable file')
+  }
+  // A read error (drive unplugged mid-stream, permissions) must never take the server down.
+  const send = (stream: ReturnType<typeof createReadStream>) =>
+    stream.on('error', () => (res.headersSent ? res.destroy() : ((res.statusCode = 500), res.end('Read error')))).pipe(res)
   const type = MIME[extname(path).toLowerCase()] ?? 'application/octet-stream'
   const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '')
   res.setHeader('Accept-Ranges', 'bytes')
@@ -162,9 +174,9 @@ export async function serveAudio(path: string, req: IncomingMessage, res: Server
     res.statusCode = 206
     res.setHeader('Content-Range', `bytes ${start}-${end}/${st.size}`)
     res.setHeader('Content-Length', end - start + 1)
-    createReadStream(path, { start, end }).pipe(res)
+    send(createReadStream(path, { start, end }))
   } else {
     res.setHeader('Content-Length', st.size)
-    createReadStream(path).pipe(res)
+    send(createReadStream(path))
   }
 }

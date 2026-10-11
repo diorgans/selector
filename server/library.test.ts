@@ -77,3 +77,13 @@ describe('bpmCompatible / mixesWell', () => {
     expect(mixesWell({ key: '8A', bpm: 124 }, { key: '8A', bpm: 100 })).toBe(false)
   })
 })
+
+import { locationToPath, pathToLocation } from './files.ts'
+describe('file locations', () => {
+  it('keeps "#" and "?" in file and folder names (they are not URL fragments)', () => {
+    const paths = ['/Volumes/Drive/Contents/Bootie Grove/#FFFF00/Choices.mp3', '/Volumes/Drive/House/DubPlates #8 - Dub.wav', '/Volumes/Drive/Where You Gonna Go?.mp3', '/Users/x/Music/100% Café.mp3']
+    for (const p of paths) expect(locationToPath(pathToLocation(p))).toBe(p)
+    // Locations already stored with a raw "#" (older scans) still resolve to the file, not its folder.
+    expect(locationToPath('file://localhost/Volumes/Trojan/Rap/ARP%20TR1CK#%20-%20FNX.mp3')).toBe('/Volumes/Trojan/Rap/ARP TR1CK# - FNX.mp3')
+  })
+})

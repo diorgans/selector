@@ -434,3 +434,21 @@ tbody tr[draggable="true"] { cursor: grab; }
 .ctl-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
 .ctl-list li.ok > span:first-child::before { content: "✓ "; color: var(--mix); }
 @media (max-width: 640px) { .ctl-list { grid-template-columns: 1fr; } }
+/* Browse-knob highlight while turning (moves without re-rendering the list). */
+tbody tr.cursor { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* --- Three FX slots per deck ------------------------------------------------------- */
+.fxrack { display: grid; gap: 5px; }
+.fxrack-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fxrack-label { font: 700 10px var(--num); color: var(--muted); letter-spacing: 0.08em; }
+.fxslots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.fxslot { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 4px; padding: 5px; border-radius: 8px; border: 1px solid var(--panel-line); transition: border-color 160ms ease, background-color 160ms ease; }
+.fxslot.on { border-color: color-mix(in srgb, var(--wf-cue) 70%, transparent); background: color-mix(in srgb, var(--wf-cue) 12%, transparent); }
+.fxslot select { min-width: 0; background: transparent; color: var(--fg); border: 0; font: 700 11px var(--num); padding: 0; }
+.fxslot select option { background: var(--bg); }
+.fxslot input[type="range"] { grid-column: 1 / -1; width: 100%; min-width: 0; accent-color: var(--wf-cue); }
+.fxslot .fx-on { grid-column: 2; grid-row: 1; padding: 2px 14px 2px 7px; }
+.fxslot { grid-template-columns: minmax(0, 1fr) auto; }
+.fxslot select { grid-column: 1 / -1; }
+.fxslot input[type="range"] { grid-column: 1; grid-row: 2; align-self: center; }
+.fxslot .fx-on { grid-column: 2; grid-row: 2; }

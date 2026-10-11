@@ -44,6 +44,8 @@ export class FxUnit {
   private readonly echoDelay: DelayNode
   private readonly echoFeedback: GainNode
   private readonly lfos: { osc: OscillatorNode; type: FxType }[] = []
+  /** Where `send` plugs into each effect; only the chosen one is connected (saves CPU). */
+  private readonly entry: Partial<Record<FxType, AudioNode>> = {}
   private releaseTimer = 0
   private listeners = new Set<() => void>()
   subscribe(fn: () => void) {
@@ -62,6 +64,7 @@ export class FxUnit {
     this.send = new GainNode(ctx, { gain: 0 })
     this.input.connect(this.dry).connect(this.output)
     this.input.connect(this.send)
+    // `send` is wired to one effect at a time in route().
     const wet = () => new GainNode(ctx, { gain: 0 })
     this.wet = { echo: wet(), reverb: wet(), phaser: wet(), flanger: wet(), trans: wet(), wah: wet() }
     for (const g of Object.values(this.wet)) g.connect(this.output)
@@ -70,41 +73,49 @@ export class FxUnit {
     this.echoDelay = new DelayNode(ctx, { maxDelayTime: 4, delayTime: 0.5 })
     this.echoFeedback = new GainNode(ctx, { gain: 0.5 })
     const echoTone = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 6000 })
-    this.send.connect(this.echoDelay).connect(echoTone).connect(this.echoFeedback).connect(this.echoDelay)
+    this.entry.echo = this.echoDelay
+    this.echoDelay.connect(echoTone).connect(this.echoFeedback).connect(this.echoDelay)
     echoTone.connect(this.wet.echo)
 
     // Reverb.
     const conv = new ConvolverNode(ctx, { buffer: impulse(ctx) })
-    this.send.connect(conv).connect(this.wet.reverb)
+    this.entry.reverb = conv
+    conv.connect(this.wet.reverb)
 
     // Phaser: six all-pass stages swept by one LFO.
-    let node: AudioNode = this.send
+    let node: AudioNode | undefined
     const phLfo = this.lfo('phaser', 'sine', 1100)
     for (let i = 0; i < 8; i++) {
       const ap = new BiquadFilterNode(ctx, { type: 'allpass', frequency: 1300, Q: 0.8 })
       phLfo.connect(ap.frequency)
-      node = node.connect(ap)
+      if (node) node.connect(ap)
+      else this.entry.phaser = ap
+      node = ap
     }
-    node.connect(this.wet.phaser)
+    node!.connect(this.wet.phaser)
 
     // Flanger: a tiny modulated delay with feedback.
     const fl = new DelayNode(ctx, { maxDelayTime: 0.02, delayTime: 0.004 })
     const flFb = new GainNode(ctx, { gain: 0.75 })
     this.lfo('flanger', 'sine', 0.0035).connect(fl.delayTime)
-    this.send.connect(fl).connect(flFb).connect(fl)
+    this.entry.flanger = fl
+    fl.connect(flFb).connect(fl)
     fl.connect(this.wet.flanger)
 
     // Trans: a square-wave gate.
     const gate = new GainNode(ctx, { gain: 0.5 })
     this.lfo('trans', 'square', 0.5).connect(gate.gain)
-    this.send.connect(gate).connect(this.wet.trans)
+    this.entry.trans = gate
+    gate.connect(this.wet.trans)
 
     // Wah: a resonant band-pass swept in time.
     const wah = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1200, Q: 5 })
     this.lfo('wah', 'sine', 900).connect(wah.frequency)
     const wahBoost = new GainNode(ctx, { gain: 2.2 })
-    this.send.connect(wah).connect(wahBoost).connect(this.wet.wah)
+    this.entry.wah = wah
+    wah.connect(wahBoost).connect(this.wet.wah)
 
+    this.route()
     this.retime()
   }
 
@@ -140,11 +151,22 @@ export class FxUnit {
     }
   }
 
+  /** Plug `send` into the chosen effect only. */
+  private route() {
+    try {
+      this.send.disconnect()
+    } catch {
+      /* not connected yet */
+    }
+    this.send.connect(this.entry[this.type]!)
+  }
+
   setType(type: FxType) {
     if (type === this.type) return
     const wasOn = this.on
     if (wasOn) this.setOn(false, true)
     this.type = type
+    this.route()
     if (wasOn) this.setOn(true)
     this.changed()
   }
@@ -187,5 +209,47 @@ export class FxUnit {
     this.send.gain.setTargetAtTime(1, t, 0.01)
     this.dry.gain.setTargetAtTime(dryLevel, t, 0.02)
     this.wet[this.type].gain.setTargetAtTime(wetLevel, t, 0.02)
+  }
+}
+
+/**
+ * Three effect slots per deck, chained, like the DDJ-SR's FX section: each slot has
+ * its own effect, on/off button and level knob; the beat length is shared.
+ */
+export class FxRack {
+  readonly slots: FxUnit[]
+  readonly input: AudioNode
+  readonly output: AudioNode
+  beats = 1
+  private listeners = new Set<() => void>()
+  constructor(ctx: BaseAudioContext) {
+    this.slots = [new FxUnit(ctx), new FxUnit(ctx), new FxUnit(ctx)]
+    this.slots[1].setType('reverb')
+    this.slots[2].setType('flanger')
+    this.slots[0].output.connect(this.slots[1].input)
+    this.slots[1].output.connect(this.slots[2].input)
+    this.input = this.slots[0].input
+    this.output = this.slots[2].output
+  }
+  subscribe(fn: () => void) {
+    this.listeners.add(fn)
+    const offs = this.slots.map((s) => s.subscribe(fn))
+    return () => {
+      this.listeners.delete(fn)
+      offs.forEach((off) => off())
+    }
+  }
+  setBeatSec(sec: number) {
+    for (const s of this.slots) s.setBeatSec(sec)
+  }
+  setBeats(b: number) {
+    this.beats = b
+    for (const s of this.slots) s.setBeats(b)
+    this.listeners.forEach((fn) => fn())
+  }
+  /** Step the shared beat length (the BEATS knob): -1 shorter, +1 longer. */
+  stepBeats(dir: number) {
+    const i = BEAT_CHOICES.indexOf(this.beats as (typeof BEAT_CHOICES)[number])
+    this.setBeats(BEAT_CHOICES[Math.max(0, Math.min(BEAT_CHOICES.length - 1, (i < 0 ? 2 : i) + Math.sign(dir)))])
   }
 }
