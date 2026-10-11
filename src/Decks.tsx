@@ -520,7 +520,7 @@ function AutomixPanel({ automix }: { automix: Automix }) {
 }
 
 const FX_KEYS = { A: 'E', B: 'I' }
-const beatLabel = (b: number) => (b === 0.25 ? '¼' : b === 0.5 ? '½' : String(b))
+const beatLabel = (b: number) => (b === 0.25 ? '¼' : b === 0.5 ? '½' : b === 0.75 ? '¾' : String(b))
 
 /** Three effect slots for one deck (like the DDJ-SR): pick each effect, its level and on/off; one shared beat length. */
 function FxControls({ deck }: { deck: Deck }) {

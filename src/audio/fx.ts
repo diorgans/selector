@@ -16,7 +16,7 @@ export const FX_INFO: Record<FxType, { name: string; synced: boolean; hint: stri
   wah: { name: 'Wah', synced: true, hint: 'A filter that sweeps up and down in time' },
 }
 
-export const BEAT_CHOICES = [0.25, 0.5, 1, 2, 4] as const
+export const BEAT_CHOICES = [0.25, 0.5, 0.75, 1, 2, 4] as const
 
 /** A short reverb tail made of decaying noise (no samples needed). */
 function impulse(ctx: BaseAudioContext, seconds = 2.6, decay = 3.2) {
@@ -252,7 +252,7 @@ export class FxRack {
     const targets = this.slots.some((s) => s.on) ? this.slots.filter((s) => s.on) : this.slots
     for (const s of targets) {
       const i = BEAT_CHOICES.indexOf(s.beats as (typeof BEAT_CHOICES)[number])
-      s.setBeats(BEAT_CHOICES[Math.max(0, Math.min(BEAT_CHOICES.length - 1, (i < 0 ? 2 : i) + Math.sign(dir)))])
+      s.setBeats(BEAT_CHOICES[Math.max(0, Math.min(BEAT_CHOICES.length - 1, (i < 0 ? BEAT_CHOICES.indexOf(1) : i) + Math.sign(dir)))])
     }
     this.listeners.forEach((fn) => fn())
   }
