@@ -4,6 +4,7 @@ import type { Automix, AutomixSettings } from './audio/automix.ts'
 import { RECIPES } from './audio/recipes.ts'
 import { BEAT_CHOICES, FX_INFO, type FxType } from './audio/fx.ts'
 import { BackgroundVisuals } from './Visuals.tsx'
+import { PHRASE_COLORS, whereAmI } from './audio/phrases.ts'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
@@ -116,6 +117,19 @@ function drawLane(g: CanvasRenderingContext2D, deck: Deck, x0: number, y0: numbe
     g.fillRect(x0 + px, mid - hi * amp * 0.45, 1, hi * amp * 0.9)
   }
   g.globalAlpha = 1
+  // Phrases: a coloured strip along the bottom of the lane, named where each starts.
+  if (deck.phrases.length) {
+    g.font = 'bold 9px system-ui'
+    for (const p of deck.phrases) {
+      const xa = x0 + (p.start - t0) / secPerPx, xb = x0 + (p.end - t0) / secPerPx
+      if (xb < 0 || xa > w) continue
+      g.fillStyle = PHRASE_COLORS[p.kind]
+      g.globalAlpha = 0.85
+      g.fillRect(Math.max(x0, xa) + 1, y0 + h - 6, Math.min(w, xb) - Math.max(x0, xa) - 2, 5)
+      g.globalAlpha = 1
+      if (xa >= 0) g.fillText(p.kind.toUpperCase(), xa + 4, y0 + h - 9)
+    }
+  }
   // Active loop: a shaded band between its start and end.
   const loop = deck.state.loop
   if (loop) {
@@ -169,6 +183,10 @@ function Overview({ deck }: { deck: Deck }) {
             g.fillRect(px, h / 2 - (hi * h) / 3, 1, (hi * h * 2) / 3)
           }
           g.globalAlpha = 1
+          for (const p of deck.phrases) {
+            g.fillStyle = PHRASE_COLORS[p.kind]
+            g.fillRect((p.start / deck.duration) * w + 0.5, h - 4, ((p.end - p.start) / deck.duration) * w - 1, 4)
+          }
           g.fillStyle = cssVar('--fg')
           g.fillRect(Math.round(played), 0, 2, h)
         }
@@ -202,6 +220,24 @@ function Knob({ label, value, onChange, min = 0, max = 1, center = 0.5, vertical
       <span>{label}</span>
       <input type="range" min={min} max={max} step={0.001} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
     </label>
+  )
+}
+
+/** Bar and beat (four lights), the current phrase, and bars left before the next one. */
+function BeatCounter({ deck, pos }: { deck: Deck; pos: number }) {
+  const t = deck.state.track
+  if (!t?.bpm || !deck.buffer) return <span className="beatcount muted">{t && !t.bpm ? 'beatgrid after analysis' : ''}</span>
+  const w = whereAmI(pos, t.firstBeatSec ?? 0, t.bpm, deck.phrases)
+  return (
+    <span className="beatcount" aria-label={`Bar ${w.bar}, beat ${w.beat}${w.phrase ? `, ${w.phrase.kind}` : ''}`}>
+      <span className="bar">BAR {Math.max(1, w.bar)}</span>
+      <span className="lights" aria-hidden>{[1, 2, 3, 4].map((i) => <i key={i} className={i === w.beat ? (i === 1 ? 'on one' : 'on') : ''} />)}</span>
+      {w.phrase && (
+        <span className="phrase" style={{ ['--pc' as string]: PHRASE_COLORS[w.phrase.kind] }}>
+          {w.phrase.kind.toUpperCase()} · {w.barsLeft!.toFixed(1)} bars left
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -260,6 +296,7 @@ function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDr
         <span>{fmt(pos)}</span>
         <span>−{fmt(deck.duration - pos)}</span>
       </div>
+      <BeatCounter deck={deck} pos={pos} />
       <div className="transport">
         <button type="button" className="tbtn cue" onClick={() => deck.cue()} disabled={!deck.buffer} aria-keyshortcuts={keys.cue} aria-label={`Cue deck ${deck.name} (${keys.cue})`}>CUE<kbd>{keys.cue}</kbd></button>
         <button type="button" className={`tbtn play ${st.playing ? 'on' : ''}`} onClick={() => deck.toggle()} disabled={!deck.buffer} aria-pressed={st.playing} aria-keyshortcuts={keys.play} aria-label={`${st.playing ? 'Pause' : 'Play'} deck ${deck.name} (${keys.play})`}>{st.playing ? '❚❚' : '▶'}<kbd>{keys.play}</kbd></button>

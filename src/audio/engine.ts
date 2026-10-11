@@ -6,6 +6,7 @@
 import type { Track } from '../../shared/types.ts'
 import { computeWaveform, type Waveform } from './waveform.ts'
 import { FxRack } from './fx.ts'
+import { detectPhrases, type Phrase } from './phrases.ts'
 
 let ctx: AudioContext | undefined
 let stretchReady: Promise<void> | undefined
@@ -295,6 +296,8 @@ export class Deck {
   readonly channel: Channel
   buffer?: AudioBuffer
   waveform?: Waveform
+  /** 8-bar phrases with names (Intro, Build, Drop…), from the beatgrid and energy. */
+  phrases: Phrase[] = []
   state: DeckState = { loading: false, playing: false, rate: 1, synced: false, keyLock: false, stemsLoaded: false, loop: null, loopBeats: 4, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
   private stems?: Map<StemPart, AudioBuffer>
   /** Key-lock player: one worklet node feeding the full mix or the four stems. */
@@ -345,6 +348,11 @@ export class Deck {
     this.emit({ keyLock: on })
   }
 
+  computePhrases() {
+    const t = this.state.track
+    this.phrases = this.waveform && t ? detectPhrases(this.waveform, t.firstBeatSec ?? 0, t.bpm, this.duration) : []
+  }
+
   /** Newer info for the loaded song (e.g. analysis just found its BPM and key). */
   refreshTrack(t: Track) {
     const cur = this.state.track
@@ -357,6 +365,7 @@ export class Deck {
       }
     if (!changed) return
     if (cur.bpm) this.channel.fx.setBeatSec(60 / (cur.bpm * this.state.rate))
+    this.computePhrases()
     this.emit()
   }
 
@@ -440,6 +449,7 @@ export class Deck {
     this.startPos = 0
     this.cuePoint = track.cues?.find((c) => c.num === -1)?.timeSec ?? track.firstBeatSec ?? 0
     this.stems = undefined
+    this.phrases = []
     this.stretch?.node.disconnect()
     this.stretch = undefined
     this.lastLoop = null
@@ -453,6 +463,7 @@ export class Deck {
       this.buffer = buffer
       this.waveform = computeWaveform(buffer)
       if (track.bpm) this.channel.fx.setBeatSec(60 / track.bpm)
+      this.computePhrases()
       this.startPos = this.cuePoint
       if (this.state.keyLock) this.buildStretch()
       this.emit({ loading: false })
@@ -635,6 +646,7 @@ export class Deck {
     if (!t || !this.bpm) return
     const beat = 60 / this.bpm
     t.firstBeatSec = (((t.firstBeatSec ?? 0) + seconds) % beat + beat) % beat
+    this.computePhrases()
     this.emit()
     return t.firstBeatSec
   }
@@ -645,6 +657,7 @@ export class Deck {
     if (!t || !this.bpm) return
     const beat = 60 / this.bpm
     t.firstBeatSec = ((this.position() % beat) + beat) % beat
+    this.computePhrases()
     this.emit()
     return t.firstBeatSec
   }

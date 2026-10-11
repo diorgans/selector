@@ -489,3 +489,14 @@ tbody tr.cursor { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--ac
 .ctl-note { display: grid; gap: 6px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, #f59e0b 12%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 50%, transparent); font-size: 13px; line-height: 1.45; }
 .ctl-note p { margin: 0; }
 .ctl-calib { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* --- Beat counter and phrases ---------------------------------------------------- */
+.deck-time { align-items: center; gap: 8px; }
+.beatcount { display: inline-flex; align-items: center; gap: 8px; font: 700 11px var(--num); color: var(--fg); }
+.beatcount.muted { color: var(--muted); font-weight: 400; }
+.beatcount .lights { display: inline-flex; gap: 3px; }
+.beatcount .lights i { width: 7px; height: 7px; border-radius: 2px; background: var(--panel-line); }
+.beatcount .lights i.on { background: var(--mix); box-shadow: 0 0 6px var(--mix); }
+.beatcount .lights i.on.one { background: var(--wf-cue); box-shadow: 0 0 6px var(--wf-cue); }
+.beatcount .phrase { padding: 1px 7px; border-radius: 999px; color: #0b0b14; background: var(--pc); white-space: nowrap; }
+.beatcount { min-height: 20px; white-space: nowrap; overflow: hidden; }
