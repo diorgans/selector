@@ -296,3 +296,42 @@ tbody tr[draggable="true"] { cursor: grab; }
 .automix-settings option { background: var(--bg); }
 .automix-status { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
 .automix-status b { color: var(--fg); font-family: var(--num); }
+
+/* --- Recap ------------------------------------------------------------------- */
+.recap { width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 48px); color: var(--fg); padding: 0; background: var(--bg); }
+:root[data-look="glass"] .recap { background: rgba(18, 16, 34, 0.96); }
+.recap::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); }
+.recap[open] { animation: vt-in-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.recap-body { padding: 22px 24px; display: grid; gap: 14px; }
+.recap-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.recap-actions select { background: transparent; color: var(--fg); border: 1px solid var(--panel-line); border-radius: 999px; padding: 6px 10px; font: 600 12px var(--font); max-width: 280px; }
+.recap-actions option { background: var(--bg); }
+.recap-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; }
+@media (max-width: 900px) { .recap-grid { grid-template-columns: 1fr; } }
+.recap-main { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.recap-name { background: transparent; border: 0; border-bottom: 1px solid var(--panel-line); color: var(--fg); font: 800 26px var(--font); padding: 2px 0; }
+.recap h3 { margin: 10px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tiles div { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--panel-line); border-radius: calc(var(--radius) * 0.6); }
+.tiles b { font: 800 26px var(--num); font-variant-numeric: tabular-nums; }
+.tiles span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.curve { width: 100%; height: auto; }
+.curve .axis { stroke: var(--panel-line); }
+.curve .tick { fill: var(--muted); font: 11px var(--num); }
+.curve .line { fill: none; stroke: var(--mix); stroke-width: 2.5; stroke-linejoin: round; }
+.curve .pt { fill: var(--fg); }
+.keypath { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.keypath .arrow { color: var(--muted); margin: 0 4px; font-size: 12px; }
+.tracklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.tracklist li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--panel-line); }
+.tracklist .ts { font: 12px var(--num); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.via { font-size: 10px; color: var(--mix); border: 1px solid color-mix(in srgb, var(--mix) 50%, transparent); border-radius: 999px; padding: 1px 6px; }
+.recap-card { display: grid; gap: 10px; align-content: start; }
+.recap-card canvas { width: 100%; aspect-ratio: 1; border-radius: calc(var(--radius) * 0.6); border: 1px solid var(--panel-line); }
+
+/* Smaller windows (laptops): the track list keeps a usable height and the page
+   scrolls instead; the side columns stay pinned while it does. */
+.app { height: auto; min-height: 100%; align-items: start; }
+.main { grid-template-rows: auto auto minmax(300px, calc(100vh - 28px - 14px * 2 - var(--decks-h, 470px) - 60px)); }
+.side, .detail { position: sticky; top: 14px; height: calc(100vh - 28px); }

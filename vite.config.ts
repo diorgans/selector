@@ -76,6 +76,10 @@ function localApi(): Plugin {
         }
         await (await load(server, '/server/files.ts')).serveAudio(path, req, res)
       })
+      route(server, '/api/sessions', {
+        GET: async (_b, s) => (await load(s, '/server/sessions.ts')).listSessions(),
+        PUT: async (body, s) => (await load(s, '/server/sessions.ts')).saveSession(body),
+      })
       route(server, '/api/export', { POST: async (body, s) => (await load(s, '/server/sets.ts')).exportSets(body) })
     },
   }

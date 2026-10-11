@@ -4,7 +4,9 @@ import type { Library, Track } from '../shared/types.ts'
 import { fetchLibrary, fetchSets, saveSets, type SetList } from './api.ts'
 import { CamelotWheel } from './CamelotWheel.tsx'
 import { getMixer } from './audio/engine.ts'
-import { Automix } from './audio/automix.ts'
+import { getAutomix } from './audio/automix.ts'
+import { getTracker } from './audio/sessionTracker.ts'
+import { Recap } from './Recap.tsx'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
@@ -107,7 +109,7 @@ export function App() {
   live.current = { lib, set, selected }
   const [automix] = useState(
     () =>
-      new Automix(getMixer(), {
+      getAutomix(getMixer(), {
         pool: () => live.current.lib?.tracks ?? [],
         set: () => live.current.set.trackIds,
         first: () => {
@@ -117,6 +119,9 @@ export function App() {
         },
       }),
   )
+
+  const [tracker] = useState(() => getTracker(getMixer(), automix))
+  const [showRecap, setShowRecap] = useState(false)
 
   const loadTo = (deck: 'A' | 'B', t: Track) => {
     setSelected(t)
@@ -135,7 +140,7 @@ export function App() {
         document.querySelector<HTMLInputElement>('.top input[type=search]')?.focus()
         return e.preventDefault()
       }
-      if (showKeys || el.closest('input, textarea, select, dialog') || e.metaKey || e.ctrlKey) return
+      if (showKeys || showRecap || el.closest('input, textarea, select, dialog') || e.metaKey || e.ctrlKey) return
       const m = getMixer(), { A, B } = m.decks
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
@@ -215,6 +220,7 @@ export function App() {
           )}
           {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
           {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
+          <button type="button" className="pill" onClick={() => setShowRecap(true)} aria-haspopup="dialog">Recap</button>
           <button type="button" className="pill keys-btn" onClick={() => setShowKeys(true)} aria-haspopup="dialog">⌨ Keys <kbd>?</kbd></button>
           <div className="look" role="group" aria-label="Design direction">
             {(['glass', 'console'] as Look[]).map((l) => (
@@ -303,6 +309,7 @@ export function App() {
         </div>
       </aside>
       <Shortcuts open={showKeys} onClose={() => setShowKeys(false)} />
+      <Recap open={showRecap} onClose={() => setShowRecap(false)} tracker={tracker} />
     </div>
   )
 }

@@ -17,3 +17,7 @@ export const exportSets = (sets: SetList[]) => call<{ path: string; sets: number
 export type StemStatus = { state: 'none' | 'queued' | 'running' | 'ready' | 'error'; stage?: string; progress?: number; message?: string; installed?: boolean }
 export const stemStatus = (id: string) => call<StemStatus>(`/api/stems?id=${encodeURIComponent(id)}`)
 export const startStems = (id: string) => call<StemStatus>(`/api/stems?id=${encodeURIComponent(id)}`, { method: 'POST' })
+
+import type { Session } from '../shared/session.ts'
+export const fetchSessions = () => call<Session[]>('/api/sessions')
+export const saveSession = (s: Session) => call<{ ok: true }>('/api/sessions', { method: 'PUT', body: JSON.stringify(s) })

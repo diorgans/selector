@@ -74,6 +74,10 @@ export type AutomixState = {
   history: { track: Track; startedAt: number }[]
 }
 
+let instance: Automix | undefined
+/** One automix per page, like the mixer. */
+export const getAutomix = (...args: ConstructorParameters<typeof Automix>) => (instance ??= new Automix(...args))
+
 export class Automix {
   settings: AutomixSettings = { source: 'smart', direction: 'hold', style: 'blend', bars: 16 }
   state: AutomixState = { on: false, status: 'Off', history: [] }
