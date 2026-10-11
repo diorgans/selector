@@ -46,3 +46,17 @@ describe('DDJ-SR preset', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 })
+
+import { makeClicker } from './midi.ts'
+describe('makeClicker (browse knob)', () => {
+  it('counts one click per physical click when the encoder sends 2 per click', () => {
+    const c = makeClicker()
+    expect([2, 2, 2].map(c)).toEqual([1, 1, 1])
+    expect(c(-2)).toBe(-1)
+    expect(c(6)).toBe(3) // a fast spin moves further
+  })
+  it('still works for encoders that send 1 per click', () => {
+    const c = makeClicker()
+    expect([1, 1, -1, 3].map(c)).toEqual([1, 1, -1, 3])
+  })
+})

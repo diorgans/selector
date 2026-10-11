@@ -51,6 +51,24 @@ export const STEPS: Step[] = [
   { id: 'B.load', label: 'LOAD right', how: 'Press the LOAD button for the right deck.', kind: 'button' },
 ]
 
+/**
+ * Turn raw knob steps into clicks. Some encoders send 2 (or more) per physical click,
+ * so the smallest step seen so far counts as one click, and bigger values (fast
+ * spins) count as several. Leftovers carry over so nothing is lost.
+ */
+export function makeClicker() {
+  let unit = Infinity
+  let carry = 0
+  return (delta: number) => {
+    if (!delta) return 0
+    unit = Math.min(unit, Math.abs(delta))
+    carry += delta / unit
+    const clicks = carry > 0 ? Math.floor(carry) : Math.ceil(carry)
+    carry -= clicks
+    return clicks
+  }
+}
+
 /** Signed step from a relative knob message (jog wheels, browse knob). */
 export function relative(value: number, rel: Binding['rel'] = 'center') {
   if (rel === 'twos') return value < 64 ? value : value - 128
@@ -170,6 +188,8 @@ export function startController() {
   started = true
   const mixer = getMixer()
   const jogRelease = { A: 0, B: 0 }
+  const browseClicks = makeClicker()
+  const beatClicks = { A: makeClicker(), B: makeClicker() }
   onMessage((m) => {
     const map = loadMap()
     const hit = Object.entries(map).find(([, b]) => same(b, m))
@@ -183,7 +203,10 @@ export function startController() {
     const v = b.invert ? 127 - m.value : m.value
     if (!d) {
       if (ctl === 'xfader') mixer.setCrossfader(v / 127)
-      if (ctl === 'browse') browse?.move(relative(m.value, b.rel)) // fast turns send bigger steps
+      if (ctl === 'browse') {
+        const clicks = browseClicks(relative(m.value, b.rel)) // one song per physical click; fast spins move further
+        if (clicks) browse?.move(clicks)
+      }
       return
     }
     const deck: Deck = mixer.decks[d]
@@ -199,7 +222,11 @@ export function startController() {
         break
       }
       case 'fx1lvl': case 'fx2lvl': case 'fx3lvl': deck.channel.fx.slots[Number(ctl[2]) - 1].setAmount(v / 127); break
-      case 'fxbeats': deck.channel.fx.stepBeats(relative(m.value, b.rel)); break
+      case 'fxbeats': {
+        const clicks = beatClicks[d](relative(m.value, b.rel))
+        if (clicks) deck.channel.fx.stepBeats(clicks)
+        break
+      }
       case 'load': if (pressed) browse?.load(d); break
       case 'keylock': if (pressed) void deck.setKeyLock(!deck.state.keyLock); break
       case 'loopauto': if (pressed) deck.autoLoop(); break
