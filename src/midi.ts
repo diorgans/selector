@@ -231,3 +231,30 @@ export function startController() {
       light(loadMap()[`${d}.keylock`], mixer.decks[d].state.keyLock)
     })
 }
+
+/**
+ * Pioneer DDJ-SR (Serato layout). Checked against messages captured from Noah's
+ * controller: PLAY 0x0B, SYNC 0x58, KEY LOCK 0x1A, AUTO LOOP 0x14 on the deck's
+ * channel; FX 1 = note 0x47 on channel 5 (left FX unit); LOAD left = note 0x46 on
+ * channel 7. The rest follow the same Pioneer layout; re-learn any that feel off.
+ */
+export function ddjSrPreset(): MidiMap {
+  const n = (channel: number, number: number): Binding => ({ kind: 'note', channel, number })
+  const cc = (channel: number, number: number, extra: Partial<Binding> = {}): Binding => ({ kind: 'cc', channel, number, ...extra })
+  const map: MidiMap = {}
+  for (const [d, ch, fxCh, padCh, filterCc] of [['A', 0, 4, 7, 0x17], ['B', 1, 5, 9, 0x18]] as const) {
+    Object.assign(map, {
+      [`${d}.play`]: n(ch, 0x0b), [`${d}.cue`]: n(ch, 0x0c), [`${d}.sync`]: n(ch, 0x58), [`${d}.keylock`]: n(ch, 0x1a),
+      [`${d}.jog`]: cc(ch, 0x21, { rel: 'center' }), [`${d}.tempo`]: cc(ch, 0x00),
+      [`${d}.hot1`]: n(padCh, 0x00), [`${d}.hot2`]: n(padCh, 0x01), [`${d}.hot3`]: n(padCh, 0x02), [`${d}.hot4`]: n(padCh, 0x03),
+      [`${d}.high`]: cc(ch, 0x07), [`${d}.mid`]: cc(ch, 0x0b), [`${d}.low`]: cc(ch, 0x0f), [`${d}.fader`]: cc(ch, 0x13), [`${d}.filter`]: cc(6, filterCc),
+      [`${d}.loopauto`]: n(ch, 0x14), [`${d}.loophalf`]: n(ch, 0x12), [`${d}.loopdouble`]: n(ch, 0x13), [`${d}.loopin`]: n(ch, 0x10), [`${d}.loopout`]: n(ch, 0x11), [`${d}.reloop`]: n(ch, 0x4d),
+      [`${d}.fx1`]: n(fxCh, 0x47), [`${d}.fx2`]: n(fxCh, 0x48), [`${d}.fx3`]: n(fxCh, 0x49),
+      [`${d}.fx1lvl`]: cc(fxCh, 0x02), [`${d}.fx2lvl`]: cc(fxCh, 0x04), [`${d}.fx3lvl`]: cc(fxCh, 0x06), [`${d}.fxbeats`]: cc(fxCh, 0x00, { rel: 'twos' }),
+      [`${d}.load`]: n(6, d === 'A' ? 0x46 : 0x47),
+    })
+  }
+  map.xfader = cc(6, 0x1f)
+  map.browse = cc(6, 0x40, { rel: 'twos' })
+  return map
+}

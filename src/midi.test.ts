@@ -28,3 +28,21 @@ describe('relative knobs (jog wheels, browse)', () => {
     expect(detectRel([1, 1, 2, 127])).toBe('twos')
   })
 })
+
+import { ddjSrPreset, STEPS } from './midi.ts'
+describe('DDJ-SR preset', () => {
+  const p = ddjSrPreset()
+  it('matches the messages captured from the controller', () => {
+    expect(p['A.play']).toEqual({ kind: 'note', channel: 0, number: 0x0b })
+    expect(p['A.sync']).toEqual({ kind: 'note', channel: 0, number: 0x58 })
+    expect(p['A.keylock']).toEqual({ kind: 'note', channel: 0, number: 0x1a })
+    expect(p['A.loopauto']).toEqual({ kind: 'note', channel: 0, number: 0x14 })
+    expect(p['A.fx1']).toEqual({ kind: 'note', channel: 4, number: 0x47 })
+    expect(p['A.load']).toEqual({ kind: 'note', channel: 6, number: 0x46 })
+  })
+  it('covers every control the setup knows, with no two controls on one message', () => {
+    expect(STEPS.filter((s) => !p[s.id]).map((s) => s.id)).toEqual([])
+    const keys = Object.values(p).map((b) => `${b.kind}${b.channel}:${b.number}`)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+})

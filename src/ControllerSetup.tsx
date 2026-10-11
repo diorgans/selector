@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { connect, detectRel, deviceName, lastAction, loadMap, onAction, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
+import { connect, ddjSrPreset, detectRel, deviceName, lastAction, loadMap, onAction, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
 
 /** The controller window: connect, learn each control, then use it. */
 export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -102,7 +102,8 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
           </div>
         ) : (
           <div className="row-btns">
-            <button type="button" className="send" disabled={!device || /No MIDI/.test(device)} onClick={() => setStep(0)}>{learned ? 'Set up again' : 'Set up controls'}</button>
+            <button type="button" className="send" disabled={!device || /No MIDI/.test(device)} onClick={() => { const m = ddjSrPreset(); setMap(m); saveMap(m) }}>Use DDJ-SR preset</button>
+            <button type="button" className="pill" disabled={!device || /No MIDI/.test(device)} onClick={() => setStep(0)}>{learned ? 'Learn all again' : 'Learn controls one by one'}</button>
             <span className="hint">{learned} of {STEPS.length} controls mapped</span>
           </div>
         )}
