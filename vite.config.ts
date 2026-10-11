@@ -39,6 +39,21 @@ function localApi(): Plugin {
         GET: async (_b, s) => (await load(s, '/server/sets.ts')).loadSets(),
         PUT: async (body, s) => ((await (await load(s, '/server/sets.ts')).saveSets(body)), { ok: true }),
       })
+      // Audio for one library track (?id=...). Only paths the library knows are served.
+      server.middlewares.use('/api/audio', async (req, res) => {
+        try {
+          const id = new URL(req.url ?? '', 'http://x').searchParams.get('id') ?? ''
+          const path = await (await load(server, '/server/library.ts')).audioPath(id)
+          if (!path) {
+            res.statusCode = 404
+            return res.end('Not a playable library track')
+          }
+          await (await load(server, '/server/files.ts')).serveAudio(path, req, res)
+        } catch (err) {
+          res.statusCode = 500
+          res.end(err instanceof Error ? err.message : String(err))
+        }
+      })
       route(server, '/api/export', { POST: async (body, s) => (await load(s, '/server/sets.ts')).exportSets(body) })
     },
   }

@@ -3,6 +3,7 @@ import { camelotHue, mixesWell } from '../shared/camelot.ts'
 import { suggestNext, type Direction } from '../shared/recommend.ts'
 import type { Library, Track } from '../shared/types.ts'
 import { exportSets, type SetList } from './api.ts'
+import { vtName, withTransition } from './motion.ts'
 
 export function KeyChip({ k }: { k: string | null }) {
   if (!k) return <span className="key key-none">–</span>
@@ -31,7 +32,7 @@ export function UpNext({ lib, current, pool, exclude, onPick, onAdd }: {
         <h2 id="upnext-h">Up next</h2>
         <div className="seg" role="group" aria-label="Energy direction">
           {DIRECTIONS.map((d) => (
-            <button key={d.id} type="button" aria-pressed={direction === d.id} title={d.hint} onClick={() => setDirection(d.id)}>{d.label}</button>
+            <button key={d.id} type="button" aria-pressed={direction === d.id} title={d.hint} onClick={() => withTransition(() => setDirection(d.id), 'reorder')}>{d.label}</button>
           ))}
         </div>
       </div>
@@ -42,7 +43,7 @@ export function UpNext({ lib, current, pool, exclude, onPick, onAdd }: {
       ) : (
         <ol className="sugs">
           {suggestions.map((s) => (
-            <li key={s.track.id} className="sug">
+            <li key={s.track.id} className="sug" style={{ viewTransitionName: vtName('sug', s.track.id) }}>
               <button type="button" className="sug-main" onClick={() => onPick(s.track)}>
                 <span className="sug-score" aria-label={`Score ${s.score} of 100`}>{s.score}</span>
                 <span className="sug-text">

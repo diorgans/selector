@@ -3,6 +3,8 @@
 
 export type TrackSource = 'streaming' | 'file'
 
+export type Cue = { num: number; name: string; timeSec: number } // num 0–7 = hot cue A–H, -1 = memory cue
+
 export type Track = {
   id: string // rekordbox TrackID
   title: string
@@ -18,6 +20,11 @@ export type Track = {
   rating: number // 0–5 stars
   dateAdded: string
   crates: string[] // crate ids this track belongs to
+  // Player fields (owned files only)
+  playable: boolean // a file Selector can open right now (exists, not copy-protected)
+  blocked?: 'missing' | 'protected' // why a file isn't playable: drive unplugged, or Apple copy protection
+  firstBeatSec?: number // where the beatgrid starts
+  cues?: Cue[]
 }
 
 export type Crate = {
@@ -31,6 +38,6 @@ export type Crate = {
 export type Library = {
   tracks: Track[]
   crates: Crate[]
-  stats: { tracks: number; analyzed: number; streaming: number; files: number; appleMatched: number }
+  stats: { tracks: number; analyzed: number; streaming: number; files: number; playable: number; appleMatched: number }
   importedAt: string
 }

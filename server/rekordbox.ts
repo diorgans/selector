@@ -55,6 +55,11 @@ export function parseRekordboxXml(xml: string): { tracks: Track[]; playlists: Re
       rating: stars(t.Rating),
       dateAdded: t.DateAdded ?? '',
       crates: [],
+      playable: false, // decided later, once the file is checked on disk
+      firstBeatSec: t.TEMPO?.[0] ? Number(t.TEMPO[0].Inizio) : undefined,
+      cues: (t.POSITION_MARK ?? [])
+        .filter((m) => m.Type === '0')
+        .map((m) => ({ num: Number(m.Num), name: m.Name ?? '', timeSec: Number(m.Start) })),
     })
   }
 

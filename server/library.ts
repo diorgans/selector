@@ -1,8 +1,9 @@
-import { readFile, stat } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Crate, Library, Track } from '../shared/types.ts'
 import { parseAppleLibrary, type ApplePlaylist, type AppleSong } from './apple.ts'
+import { isProtected, locationToPath, scanFiles } from './files.ts'
 import { parseRekordboxXml, type RawTrack, type RekordboxPlaylist } from './rekordbox.ts'
 
 /** Lowercase, drop "(feat. …)", "[Remix]"-style tags and punctuation, so "Love & War (feat. X)" ≈ "love war". */
@@ -20,8 +21,11 @@ const songKey = (title: string, artist: string) => `${normalize(title)}|${normal
 export function buildLibrary(
   rb: { tracks: Track[]; playlists: RekordboxPlaylist[] },
   apple?: { songs: AppleSong[]; playlists: ApplePlaylist[] },
+  files: Track[] = [],
 ): Library {
-  const tracks = rb.tracks.map((t) => ({ ...t, crates: [] as string[] }))
+  // Scanned files rekordbox already knows (same path) aren't listed twice.
+  const known = new Set(rb.tracks.map((t) => t.location))
+  const tracks = [...rb.tracks, ...files.filter((f) => !known.has(f.location))].map((t) => ({ ...t, crates: [] as string[] }))
   const byId = new Map(tracks.map((t) => [t.id, t]))
   const crates: Crate[] = []
 
@@ -61,6 +65,7 @@ export function buildLibrary(
       analyzed: tracks.filter((t) => t.bpm && t.key).length,
       streaming: tracks.filter((t) => t.source === 'streaming').length,
       files: tracks.filter((t) => t.source === 'file').length,
+      playable: tracks.filter((t) => t.playable).length,
       appleMatched,
     },
     importedAt: new Date().toISOString(),
@@ -74,7 +79,7 @@ export const paths = {
   apple: process.env.SELECTOR_APPLE_XML ?? join(homedir(), 'Music', 'Apple Music Library.xml'),
 }
 
-let cache: { key: string; library: Library; raw: Map<string, RawTrack> } | undefined
+let cache: { key: string; library: Library; raw: Map<string, RawTrack>; paths: Map<string, string> } | undefined
 
 async function mtime(path: string) {
   try {
@@ -87,12 +92,42 @@ async function mtime(path: string) {
 export async function loadLibrary(): Promise<Library> {
   const [rbTime, appleTime] = await Promise.all([mtime(paths.rekordbox), mtime(paths.apple)])
   if (rbTime === null) throw new Error(`No rekordbox export at ${paths.rekordbox}. In rekordbox: File › Export Collection in xml format.`)
-  const key = `${rbTime}:${appleTime}`
+  // Re-scan at most every 30 s so new downloads and a plugged-in drive show up without a restart.
+  const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}`
   if (cache?.key === key) return cache.library
   const rb = parseRekordboxXml(await readFile(paths.rekordbox, 'utf8'))
   const apple = appleTime === null ? undefined : parseAppleLibrary(await readFile(paths.apple, 'utf8'))
-  cache = { key, library: buildLibrary(rb, apple), raw: rb.raw }
+  // rekordbox's file tracks: playable only if the file is there right now (e.g. the Trojan drive is plugged in).
+  for (const t of rb.tracks) {
+    if (t.source !== 'file') continue
+    const p = locationToPath(t.location)
+    if (p && isProtected(p)) Object.assign(t, { playable: false, blocked: 'protected' })
+    else if (p && (await exists(p))) t.playable = true
+    else t.blocked = 'missing'
+  }
+  const library = buildLibrary(rb, apple, await scanFiles())
+  const filePaths = new Map<string, string>()
+  for (const t of library.tracks) {
+    const p = t.playable ? locationToPath(t.location) : null
+    if (p) filePaths.set(t.id, p)
+  }
+  cache = { key, library, raw: rb.raw, paths: filePaths }
   return cache.library
+}
+
+async function exists(p: string) {
+  try {
+    await access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The file behind a playable track id; only library tracks can ever be served. */
+export async function audioPath(id: string): Promise<string | null> {
+  await loadLibrary()
+  return cache!.paths.get(id) ?? null
 }
 
 /** rekordbox's own record of each track, for writing playlists it will recognise. */

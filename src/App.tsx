@@ -3,6 +3,9 @@ import { harmonicNeighbors, mixesWell } from '../shared/camelot.ts'
 import type { Library, Track } from '../shared/types.ts'
 import { fetchLibrary, fetchSets, saveSets, type SetList } from './api.ts'
 import { CamelotWheel } from './CamelotWheel.tsx'
+import { getMixer } from './audio/engine.ts'
+import { DeckArea } from './Decks.tsx'
+import { withTransition } from './motion.ts'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
 type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'durationSec' | 'playCount'
@@ -74,6 +77,33 @@ export function App() {
 
   const tracksById = useMemo(() => new Map((lib?.tracks ?? []).map((t) => [t.id, t])), [lib])
   const inSet = useMemo(() => new Set(set.trackIds), [set])
+  const loadTo = (deck: 'A' | 'B', t: Track) => {
+    setSelected(t)
+    void getMixer().decks[deck].load(t)
+  }
+
+  // Keyboard: Q/P play A/B · A/L cue · S/K sync · Z/M load selected track into A/B · ←/→ crossfader.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (el.closest('input, textarea, select') || e.metaKey || e.ctrlKey) return
+      const m = getMixer(), { A, B } = m.decks
+      const act: Record<string, () => void> = {
+        q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
+        s: () => A.syncTo(B), k: () => B.syncTo(A),
+        z: () => selected?.playable && loadTo('A', selected), m: () => selected?.playable && loadTo('B', selected),
+        ArrowLeft: () => m.setCrossfader(m.crossfader - 0.05), ArrowRight: () => m.setCrossfader(m.crossfader + 0.05),
+      }
+      const fn = act[e.key.length === 1 ? e.key.toLowerCase() : e.key]
+      if (fn) {
+        fn()
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const addToSet = (t: Track) => {
     setSet((s) => ({ ...s, trackIds: [...s.trackIds, t.id] }))
     setSelected(t) // keep chaining from the track just added
@@ -96,12 +126,12 @@ export function App() {
       <aside className="side panel">
         <div className="brand">Selector</div>
         <nav aria-label="Crates">
-          <button type="button" className={crate === 'all' ? 'crate on' : 'crate'} onClick={() => setCrate('all')}>
+          <button type="button" className={crate === 'all' ? 'crate on' : 'crate'} onClick={() => withTransition(() => setCrate('all'), 'crate')}>
             <span>All tracks</span><span className="count">{lib.tracks.length}</span>
           </button>
           <div className="side-label">Apple Music playlists</div>
           {crates.filter((c) => c.trackIds.length > 0).map((c) => (
-            <button key={c.id} type="button" className={crate === c.id ? 'crate on' : 'crate'} onClick={() => setCrate(c.id)} title={`${c.trackIds.length} of ${c.totalItems} songs are in rekordbox`}>
+            <button key={c.id} type="button" className={crate === c.id ? 'crate on' : 'crate'} onClick={() => withTransition(() => setCrate(c.id), 'crate')} title={`${c.trackIds.length} of ${c.totalItems} songs are in rekordbox`}>
               <span className="crate-name">{c.name}</span><span className="count">{c.trackIds.length}</span>
             </button>
           ))}
@@ -109,16 +139,17 @@ export function App() {
       </aside>
 
       <main className="main">
+        <DeckArea />
         <header className="top panel">
           <input type="search" placeholder="Search title, artist, genre" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search tracks" />
           {keyFilter && (
-            <button type="button" className="pill" onClick={() => setKeyFilter(null)}>Mixes with <KeyChip k={keyFilter} /> ✕</button>
+            <button type="button" className="pill" onClick={() => withTransition(() => setKeyFilter(null), 'crate')}>Mixes with <KeyChip k={keyFilter} /> ✕</button>
           )}
           {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
           {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
           <div className="look" role="group" aria-label="Design direction">
             {(['glass', 'console'] as Look[]).map((l) => (
-              <button key={l} type="button" aria-pressed={look === l} onClick={() => setLook(l)}>{l === 'glass' ? 'A · Glass' : 'B · Console'}</button>
+              <button key={l} type="button" aria-pressed={look === l} onClick={() => withTransition(() => setLook(l), 'look')}>{l === 'glass' ? 'A · Glass' : 'B · Console'}</button>
             ))}
           </div>
         </header>
@@ -127,6 +158,7 @@ export function App() {
           <table>
             <thead>
               <tr>
+                <th className="load-h"><span className="th-plain">Load</span></th>
                 {header('title', 'Title')}
                 {header('artist', 'Artist')}
                 {header('bpm', 'BPM', 'num')}
@@ -138,14 +170,26 @@ export function App() {
             </thead>
             <tbody>
               {visible.map((t) => (
-                <tr key={t.id} className={selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''} onClick={() => setSelected(t)}>
+                <tr key={t.id} className={`${selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''}${t.playable ? '' : ' locked'}`} onClick={() => setSelected(t)}>
+                  <td className="load">
+                    {t.playable ? (
+                      <>
+                        <button type="button" onClick={(e) => (e.stopPropagation(), loadTo('A', t))} aria-label={`Load ${t.title} to deck A`}>A</button>
+                        <button type="button" onClick={(e) => (e.stopPropagation(), loadTo('B', t))} aria-label={`Load ${t.title} to deck B`}>B</button>
+                      </>
+                    ) : (
+                      <span className="lock" title={t.source === 'streaming' ? 'Apple Music streaming: play it in rekordbox' : t.blocked === 'protected' ? 'Copy-protected Apple download' : 'File not found: is the drive plugged in?'}>
+                        {t.source === 'streaming' ? '☁' : t.blocked === 'protected' ? '🔒' : '⏏'}
+                      </span>
+                    )}
+                  </td>
                   <td className="title">{mixable.has(t.id) && <span className="mix-dot" title="Mixes well with the selected track" />}{t.title}</td>
                   <td className="artist">{t.artist}</td>
                   <td className="num">{t.bpm ? t.bpm.toFixed(t.bpm % 1 ? 1 : 0) : '–'}</td>
                   <td><KeyChip k={t.key} /></td>
                   <td className="num">{fmtTime(t.durationSec)}</td>
                   <td className="num">{t.playCount || ''}</td>
-                  <td><span className={`src src-${t.source}`}>{t.source === 'streaming' ? 'Stream' : 'File'}</span></td>
+                  <td><span className={`src src-${t.source}`}>{t.source === 'streaming' ? 'Stream' : t.playable ? 'File' : t.blocked === 'protected' ? 'Protected' : 'Offline'}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -173,7 +217,7 @@ export function App() {
 
         <div className="tabs" role="tablist" aria-label="Panels">
           {([['next', 'Up next'], ['set', `Set · ${set.trackIds.length}`], ['keys', 'Keys']] as const).map(([id, label]) => (
-            <button key={id} type="button" role="tab" id={`tab-${id}`} aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => setTab(id)}>{label}</button>
+            <button key={id} type="button" role="tab" id={`tab-${id}`} aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => withTransition(() => setTab(id), 'tab')}>{label}</button>
           ))}
         </div>
         <div className="tab-panel" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
@@ -183,7 +227,7 @@ export function App() {
           {tab === 'set' && <SetBuilder set={set} tracksById={tracksById} onChange={setSet} onSelect={setSelected} />}
           {tab === 'keys' && (
             <div className="keys">
-              <CamelotWheel counts={keyCounts} selected={selected?.key ?? keyFilter} onPick={(k) => setKeyFilter((f) => (f === k ? null : k))} />
+              <CamelotWheel counts={keyCounts} selected={selected?.key ?? keyFilter} onPick={(k) => withTransition(() => setKeyFilter((f) => (f === k ? null : k)), 'crate')} />
               <p className="hint">Brighter slices have more tracks in this crate. Outlined slices mix with the selected key. Click a slice to show only tracks that mix with it.</p>
             </div>
           )}

@@ -4,7 +4,7 @@ import type { Track } from './types.ts'
 
 const track = (id: string, key: string | null, bpm: number | null, extra: Partial<Track> = {}): Track => ({
   id, title: `T${id}`, artist: 'A', album: '', genre: '', bpm, key, durationSec: 200, source: 'streaming',
-  location: '', playCount: 0, rating: 0, dateAdded: '', crates: [], ...extra,
+  location: '', playCount: 0, rating: 0, dateAdded: '', crates: [], playable: false, ...extra,
 })
 
 describe('keyMove', () => {
