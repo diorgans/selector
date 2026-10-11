@@ -75,6 +75,12 @@ class Channel {
   }
 }
 
+export const STEM_PARTS = ['vocals', 'drums', 'bass', 'other'] as const
+export type StemPart = (typeof STEM_PARTS)[number]
+/** What the deck controls show: "Instruments" is bass + other together. */
+export const STEM_GROUPS = { vocals: ['vocals'], instruments: ['bass', 'other'], drums: ['drums'] } as const
+export type StemGroup = keyof typeof STEM_GROUPS
+
 export type DeckState = {
   track?: Track
   loading: boolean
@@ -82,13 +88,17 @@ export type DeckState = {
   playing: boolean
   rate: number // 1 = original speed
   synced: boolean
+  stemsLoaded: boolean // playing from separated stems instead of the full mix
+  stemLevels: Record<StemGroup, number>
 }
 
 export class Deck {
   readonly channel: Channel
   buffer?: AudioBuffer
   waveform?: Waveform
-  state: DeckState = { loading: false, playing: false, rate: 1, synced: false }
+  state: DeckState = { loading: false, playing: false, rate: 1, synced: false, stemsLoaded: false, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
+  private stems?: Map<StemPart, AudioBuffer>
+  private stemGains = new Map<StemPart, GainNode>()
   cuePoint = 0
   private sources: AudioBufferSourceNode[] = []
   private startedAt = 0 // context time when playback (re)started
@@ -100,6 +110,39 @@ export class Deck {
   constructor(master: Master, name: 'A' | 'B') {
     this.name = name
     this.channel = new Channel(master)
+    for (const part of STEM_PARTS) {
+      const g = audio().createGain()
+      g.connect(this.channel.input)
+      this.stemGains.set(part, g)
+    }
+  }
+
+  /** Swap playback to separated stems (keeps position; seamless if playing). */
+  async loadStems(id: string) {
+    const token = this.loadToken
+    const buffers = await Promise.all(
+      STEM_PARTS.map(async (part) => {
+        const res = await fetch(`/api/stem?id=${encodeURIComponent(id)}&part=${part}`)
+        if (!res.ok) throw new Error(`Stem ${part} unavailable`)
+        return [part, await audio().decodeAudioData(await res.arrayBuffer())] as const
+      }),
+    )
+    if (token !== this.loadToken || this.state.track?.id !== id) return // another track was loaded meanwhile
+    this.stems = new Map(buffers)
+    const pos = this.position()
+    if (this.state.playing) {
+      this.stopSources()
+      this.state.stemsLoaded = true
+      this.startSources(pos)
+    }
+    this.emit({ stemsLoaded: true })
+  }
+
+  /** Vocals / instruments / drums level, 0–1 (0 mutes that part). */
+  setStemLevel(group: StemGroup, level: number) {
+    const v = Math.max(0, Math.min(1, level))
+    for (const part of STEM_GROUPS[group]) this.stemGains.get(part)!.gain.setTargetAtTime(v * v, audio().currentTime, 0.015)
+    this.emit({ stemLevels: { ...this.state.stemLevels, [group]: v } })
   }
 
   subscribe(fn: () => void) {
@@ -132,7 +175,8 @@ export class Deck {
     this.stopSources()
     this.startPos = 0
     this.cuePoint = track.cues?.find((c) => c.num === -1)?.timeSec ?? track.firstBeatSec ?? 0
-    this.emit({ track, loading: true, error: undefined, playing: false, rate: 1, synced: false })
+    this.stems = undefined
+    this.emit({ track, loading: true, error: undefined, playing: false, rate: 1, synced: false, stemsLoaded: false })
     try {
       const res = await fetch(`/api/audio?id=${encodeURIComponent(track.id)}`)
       if (!res.ok) throw new Error(res.status === 404 ? 'This track isn’t a playable file.' : `Couldn’t load (${res.status}).`)
@@ -165,18 +209,26 @@ export class Deck {
   private startSources(at: number) {
     if (!this.buffer) return
     const c = audio()
-    const src = new AudioBufferSourceNode(c, { buffer: this.buffer, playbackRate: this.state.rate })
-    src.connect(this.channel.input)
-    src.onended = () => {
-      if (this.sources.includes(src) && this.position() >= this.duration - 0.05) {
+    // Full mix, or the four stems started at the same instant so they stay sample-aligned.
+    const plan: [AudioBuffer, AudioNode][] = this.stems && this.state.stemsLoaded
+      ? STEM_PARTS.map((p) => [this.stems!.get(p)!, this.stemGains.get(p)!])
+      : [[this.buffer, this.channel.input]]
+    const when = c.currentTime
+    const sources = plan.map(([buffer, dest]) => {
+      const src = new AudioBufferSourceNode(c, { buffer, playbackRate: this.state.rate })
+      src.connect(dest)
+      src.start(when, Math.max(0, at))
+      return src
+    })
+    sources[0].onended = () => {
+      if (this.sources === sources && this.position() >= this.duration - 0.05) {
         this.startPos = this.duration
         this.sources = []
         this.emit({ playing: false })
       }
     }
-    src.start(0, Math.max(0, at))
-    this.sources = [src]
-    this.startedAt = c.currentTime
+    this.sources = sources
+    this.startedAt = when
     this.startPos = at
   }
 

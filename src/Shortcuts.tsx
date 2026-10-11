@@ -35,6 +35,7 @@ const HOW = [
   'Click a track. Songs that mix well with it light up, and Up next suggests what to play after it.',
   'Press A or B on a row (or Z / M) to load it onto a deck. ☁ songs stream from Apple Music, so play those in rekordbox.',
   'Press play, then SYNC on the second deck to lock the beats together. Blend with the EQ and the crossfader.',
+  'On a deck, ✂ Split stems separates vocals, instruments and drums (once per song, on your Mac). Click a part to mute it, or slide to fade it.',
   'Build a set with ＋, then Send to rekordbox to play it there, Automix included.',
 ]
 

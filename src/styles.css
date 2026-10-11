@@ -253,3 +253,15 @@ kbd { display: inline-block; min-width: 1.5em; padding: 1px 5px; border: 1px sol
 .kbd-row dd { margin: 0; color: var(--muted); }
 .or { color: var(--muted); }
 .how { margin: 0; padding-left: 1.2em; display: grid; gap: 10px; color: var(--muted); line-height: 1.5; }
+
+/* --- Stems ------------------------------------------------------------------- */
+.stems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stem { display: grid; gap: 4px; }
+.stem button { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--panel-line); font: 700 11px var(--num); background: color-mix(in srgb, var(--mix) 18%, transparent); }
+.stem.muted button { background: transparent; color: var(--muted); text-decoration: line-through; }
+.stem input { width: 100%; accent-color: var(--mix); }
+.stems-cta { display: flex; align-items: center; gap: 8px; min-height: 30px; flex-wrap: wrap; }
+.stems-cta .hint { font-size: 11px; }
+.stem-progress { display: grid; gap: 4px; width: 100%; font-size: 12px; color: var(--muted); }
+.stem-progress .bar { height: 4px; border-radius: 2px; background: var(--panel-line); overflow: hidden; }
+.stem-progress .bar span { display: block; height: 100%; background: var(--mix); transition: width 0.5s ease; }

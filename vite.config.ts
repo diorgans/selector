@@ -54,6 +54,28 @@ function localApi(): Plugin {
           res.end(err instanceof Error ? err.message : String(err))
         }
       })
+      // Stems: GET ?id= → status; POST ?id= → start splitting. /api/stem?id=&part= serves one stem.
+      server.middlewares.use('/api/stems', async (req, res) => {
+        const id = new URL(req.url ?? '', 'http://x').searchParams.get('id') ?? ''
+        res.setHeader('Content-Type', 'application/json')
+        try {
+          const stems = await load(server, '/server/stems.ts')
+          const status = req.method === 'POST' ? await stems.requestStems(id) : stems.stemStatus(id)
+          res.end(JSON.stringify({ ...status, installed: stems.stemsInstalled() }))
+        } catch (err) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ state: 'error', message: err instanceof Error ? err.message : String(err) }))
+        }
+      })
+      server.middlewares.use('/api/stem', async (req, res) => {
+        const q = new URL(req.url ?? '', 'http://x').searchParams
+        const path = await (await load(server, '/server/stems.ts')).stemPath(q.get('id') ?? '', q.get('part') ?? '')
+        if (!path) {
+          res.statusCode = 404
+          return res.end('Stem not ready')
+        }
+        await (await load(server, '/server/files.ts')).serveAudio(path, req, res)
+      })
       route(server, '/api/export', { POST: async (body, s) => (await load(s, '/server/sets.ts')).exportSets(body) })
     },
   }

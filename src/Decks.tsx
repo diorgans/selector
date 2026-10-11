@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
-import { getMixer, type Deck, type Mixer } from './audio/engine.ts'
+import { getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
+import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { KeyChip } from './Sidebar.tsx'
 
 const HOT_CUES = 'ABCDEFGH'
@@ -245,8 +246,113 @@ function DeckPanel({ deck, other }: { deck: Deck; other: Deck }) {
           return <button key={letter} type="button" disabled={!cue || !deck.buffer} onClick={() => deck.hotCue(i)} title={cue ? cue.name || `Hot cue ${letter}` : `No hot cue ${letter} (set them in rekordbox)`}>{letter}</button>
         })}
       </div>
+      <StemControls deck={deck} />
       <Knob label="Tempo" value={st.rate} min={0.92} max={1.08} center={1} onChange={(v) => deck.setRate(v)} className="tempo" />
     </section>
+  )
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  starting: 'Starting…', 'loading-model': 'Loading the AI model…', decoding: 'Reading the file…', separating: 'Separating', saving: 'Saving stems…',
+}
+const GROUP_LABEL: Record<StemGroup, string> = { vocals: 'Vocals', instruments: 'Instruments', drums: 'Drums' }
+
+/** Split a song into vocals / instruments / drums, then mix them live. */
+function StemControls({ deck }: { deck: Deck }) {
+  const st = useDeck(deck)
+  const id = st.track?.playable ? st.track.id : undefined
+  const [status, setStatus] = useState<StemStatus>()
+  const [muted, setMuted] = useState<Partial<Record<StemGroup, number>>>({}) // level to restore on unmute
+
+  // Check the cache when a track loads; poll while a split is running.
+  useEffect(() => {
+    setStatus(undefined)
+    setMuted({})
+    if (!id) return
+    let stop = false
+    let timer = 0
+    const check = async () => {
+      try {
+        const s = await stemStatus(id)
+        if (stop) return
+        setStatus(s)
+        if (s.state === 'ready') {
+          if (!deck.state.stemsLoaded && deck.state.track?.id === id && !deck.state.loading) await deck.loadStems(id)
+        } else if (s.state === 'queued' || s.state === 'running') timer = window.setTimeout(check, 700)
+      } catch (e) {
+        if (!stop) setStatus({ state: 'error', message: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    void check()
+    const unsub = deck.subscribe(() => {
+      // Once the full track finishes loading, pick up stems that were already cached.
+      if (!deck.state.loading && !deck.state.stemsLoaded && deck.state.track?.id === id) void check()
+    })
+    return () => {
+      stop = true
+      clearTimeout(timer)
+      unsub()
+    }
+  }, [id, deck])
+
+  async function split() {
+    if (!id) return
+    try {
+      setStatus(await startStems(id))
+      const poll = async () => {
+        const s = await stemStatus(id)
+        setStatus(s)
+        if (s.state === 'ready') await deck.loadStems(id)
+        else if (s.state === 'queued' || s.state === 'running') setTimeout(poll, 700)
+      }
+      setTimeout(poll, 700)
+    } catch (e) {
+      setStatus({ state: 'error', message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  if (!id) return null
+  if (st.stemsLoaded) {
+    return (
+      <div className="stems" role="group" aria-label={`Deck ${deck.name} stems`}>
+        {(Object.keys(STEM_GROUPS) as StemGroup[]).map((g) => {
+          const level = st.stemLevels[g]
+          const isMuted = level === 0
+          return (
+            <div key={g} className={`stem ${isMuted ? 'muted' : ''}`}>
+              <button
+                type="button"
+                aria-pressed={!isMuted}
+                aria-label={`${isMuted ? 'Unmute' : 'Mute'} ${GROUP_LABEL[g]} on deck ${deck.name}`}
+                onClick={() => {
+                  if (isMuted) deck.setStemLevel(g, muted[g] || 1)
+                  else (setMuted((m) => ({ ...m, [g]: level })), deck.setStemLevel(g, 0))
+                }}
+              >{GROUP_LABEL[g]}</button>
+              <input type="range" min={0} max={1} step={0.01} value={level} aria-label={`${GROUP_LABEL[g]} level, deck ${deck.name}`} onChange={(e) => deck.setStemLevel(g, Number(e.target.value))} onDoubleClick={() => deck.setStemLevel(g, 1)} />
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+  const busy = status?.state === 'queued' || status?.state === 'running'
+  return (
+    <div className="stems-cta">
+      {busy ? (
+        <div className="stem-progress" role="status">
+          <span>{status?.state === 'queued' ? 'Queued: another song is splitting first…' : `${STAGE_LABEL[status?.stage ?? 'starting'] ?? 'Working…'}${status?.stage === 'separating' && status.progress ? ` ${Math.round(status.progress * 100)}%` : ''}`}</span>
+          <span className="bar"><span style={{ width: `${Math.round((status?.progress ?? 0) * 100)}%` }} /></span>
+        </div>
+      ) : status?.state === 'ready' ? (
+        <span className="hint">Loading stems…</span>
+      ) : (
+        <>
+          <button type="button" className="pill" onClick={split} disabled={st.loading || status?.installed === false}>✂ Split stems</button>
+          <span className="hint">{status?.state === 'error' ? status.message : 'Vocals · instruments · drums, on your Mac (~20–40 s)'}</span>
+        </>
+      )}
+    </div>
   )
 }
 
