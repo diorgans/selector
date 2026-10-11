@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Crate, Library, Track } from '../shared/types.ts'
 import { parseAppleLibrary, type ApplePlaylist, type AppleSong } from './apple.ts'
-import { parseRekordboxXml, type RekordboxPlaylist } from './rekordbox.ts'
+import { parseRekordboxXml, type RawTrack, type RekordboxPlaylist } from './rekordbox.ts'
 
 /** Lowercase, drop "(feat. …)", "[Remix]"-style tags and punctuation, so "Love & War (feat. X)" ≈ "love war". */
 export function normalize(s: string): string {
@@ -74,7 +74,7 @@ export const paths = {
   apple: process.env.SELECTOR_APPLE_XML ?? join(homedir(), 'Music', 'Apple Music Library.xml'),
 }
 
-let cache: { key: string; library: Library } | undefined
+let cache: { key: string; library: Library; raw: Map<string, RawTrack> } | undefined
 
 async function mtime(path: string) {
   try {
@@ -91,6 +91,12 @@ export async function loadLibrary(): Promise<Library> {
   if (cache?.key === key) return cache.library
   const rb = parseRekordboxXml(await readFile(paths.rekordbox, 'utf8'))
   const apple = appleTime === null ? undefined : parseAppleLibrary(await readFile(paths.apple, 'utf8'))
-  cache = { key, library: buildLibrary(rb, apple) }
+  cache = { key, library: buildLibrary(rb, apple), raw: rb.raw }
   return cache.library
+}
+
+/** rekordbox's own record of each track, for writing playlists it will recognise. */
+export async function rawTracks(): Promise<Map<string, RawTrack>> {
+  await loadLibrary()
+  return cache!.raw
 }

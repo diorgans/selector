@@ -6,7 +6,7 @@ import type { Track } from '../shared/types.ts'
 // documented at rekordbox.com/en/support/developer.
 
 type Attrs = Record<string, string>
-type RawTrack = Attrs & { TEMPO?: Attrs[]; POSITION_MARK?: Attrs[] }
+export type RawTrack = Attrs & { TEMPO?: Attrs[]; POSITION_MARK?: Attrs[] }
 type RawNode = Attrs & { NODE?: RawNode[]; TRACK?: Attrs[] }
 
 export type RekordboxPlaylist = { path: string[]; trackIds: string[] }
@@ -27,15 +27,18 @@ function source(location: string): Track['source'] | 'skip' {
   return 'file'
 }
 
-export function parseRekordboxXml(xml: string): { tracks: Track[]; playlists: RekordboxPlaylist[] } {
+export function parseRekordboxXml(xml: string): { tracks: Track[]; playlists: RekordboxPlaylist[]; raw: Map<string, RawTrack> } {
   const doc = parser.parse(xml)?.DJ_PLAYLISTS
   if (!doc?.COLLECTION) throw new Error('Not a rekordbox collection export (no COLLECTION found).')
 
   const tracks: Track[] = []
+  // Tracks exactly as rekordbox wrote them, so exported playlists hand them back unchanged.
+  const raw = new Map<string, RawTrack>()
   for (const t of (doc.COLLECTION.TRACK ?? []) as RawTrack[]) {
     const location = t.Location ?? ''
     const src = source(location)
     if (src === 'skip') continue
+    raw.set(t.TrackID, t)
     const bpm = Number(t.AverageBpm)
     tracks.push({
       id: t.TrackID,
@@ -65,5 +68,5 @@ export function parseRekordboxXml(xml: string): { tracks: Track[]; playlists: Re
   }
   const root = doc.PLAYLISTS?.NODE?.[0]
   if (root) walk(root, [])
-  return { tracks, playlists }
+  return { tracks, playlists, raw }
 }

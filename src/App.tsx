@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { camelotHue, harmonicNeighbors, mixesWell } from '../shared/camelot.ts'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { harmonicNeighbors, mixesWell } from '../shared/camelot.ts'
 import type { Library, Track } from '../shared/types.ts'
-import { fetchLibrary } from './api.ts'
+import { fetchLibrary, fetchSets, saveSets, type SetList } from './api.ts'
 import { CamelotWheel } from './CamelotWheel.tsx'
+import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
 type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'durationSec' | 'playCount'
 type Look = 'glass' | 'console'
@@ -10,11 +11,6 @@ type Look = 'glass' | 'console'
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
 // Sort keys by wheel position (1A, 1B, 2A…) rather than alphabetically (10A before 1A).
 const keyOrder = (k: string | null) => (k ? Number(k.slice(0, -1)) * 2 + (k.endsWith('B') ? 1 : 0) : 99)
-
-function KeyChip({ k }: { k: string | null }) {
-  if (!k) return <span className="key key-none">–</span>
-  return <span className="key" style={{ ['--h' as string]: camelotHue(k) }}>{k}</span>
-}
 
 export function App() {
   const [lib, setLib] = useState<Library>()
@@ -26,9 +22,19 @@ export function App() {
   const [selected, setSelected] = useState<Track>()
   const [look, setLook] = useState<Look>(() => (new URLSearchParams(location.search).get('look') as Look) ?? 'glass')
 
+  const [set, setSet] = useState<SetList>({ id: 'set-1', name: 'Selector set', trackIds: [] })
+
   useEffect(() => {
     fetchLibrary().then(setLib, (e) => setError(String(e.message ?? e)))
+    fetchSets().then((s) => s[0] && setSet(s[0]), () => {})
   }, [])
+  // Save the set shortly after each change (one set for now; the file holds a list for later).
+  const firstSave = useRef(true)
+  useEffect(() => {
+    if (firstSave.current) return void (firstSave.current = false)
+    const t = setTimeout(() => saveSets([set]).catch(() => {}), 400)
+    return () => clearTimeout(t)
+  }, [set])
   useEffect(() => {
     document.documentElement.dataset.look = look
   }, [look])
@@ -64,6 +70,13 @@ export function App() {
     () => new Set(selected ? visible.filter((t) => t.id !== selected.id && mixesWell(selected, t)).map((t) => t.id) : []),
     [selected, visible],
   )
+
+  const tracksById = useMemo(() => new Map((lib?.tracks ?? []).map((t) => [t.id, t])), [lib])
+  const inSet = useMemo(() => new Set(set.trackIds), [set])
+  const addToSet = (t: Track) => {
+    setSet((s) => ({ ...s, trackIds: [...s.trackIds, t.id] }))
+    setSelected(t) // keep chaining from the track just added
+  }
 
   if (error) return <main className="empty"><h1>Selector</h1><p>{error}</p></main>
   if (!lib) return <main className="empty"><p>Reading your library…</p></main>
@@ -149,14 +162,14 @@ export function App() {
             <div className="now-meta">
               <span className="big">{selected.bpm?.toFixed(0) ?? '–'}<small>BPM</small></span>
               <KeyChip k={selected.key} />
+              <button type="button" className="pill" disabled={inSet.has(selected.id)} onClick={() => addToSet(selected)}>{inSet.has(selected.id) ? 'In set' : '＋ Add to set'}</button>
             </div>
-            {selected.key && (
-              <button type="button" className="pill" onClick={() => setKeyFilter(selected.key)}>Show tracks that mix with {selected.key}</button>
-            )}
           </div>
         ) : (
-          <p className="hint">Pick a track to see which keys mix with it. Click a slice to filter by key.</p>
+          <p className="hint">Pick a track to see what mixes with it. Click a slice of the wheel to filter by key.</p>
         )}
+        {selected && <UpNext lib={lib} current={selected} pool={inCrate} exclude={inSet} onPick={setSelected} onAdd={addToSet} />}
+        <SetBuilder set={set} tracksById={tracksById} onChange={setSet} onSelect={setSelected} />
       </aside>
     </div>
   )
