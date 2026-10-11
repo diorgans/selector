@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Crate, Library, Track } from '../shared/types.ts'
 import { parseAppleLibrary, type ApplePlaylist, type AppleSong } from './apple.ts'
 import { isProtected, locationToPath, scanFiles } from './files.ts'
+import { analysisVersion, applyAnalysis } from './analysis.ts'
 import { parseRekordboxXml, type RawTrack, type RekordboxPlaylist } from './rekordbox.ts'
 
 /** Lowercase, drop "(feat. …)", "[Remix]"-style tags and punctuation, so "Love & War (feat. X)" ≈ "love war". */
@@ -109,7 +110,8 @@ export async function loadLibrary(force = false): Promise<Library> {
 async function build(force: boolean): Promise<Library> {
   const [rbTime, appleTime] = await Promise.all([mtime(paths.rekordbox), mtime(paths.apple)])
   // Re-scan at most every 30 s so new downloads and a plugged-in drive show up without a restart.
-  const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}`
+  // New analysis results (every few seconds while it runs) also trigger a re-merge.
+  const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}:${analysisVersion()}`
   if (!force && cache?.key === key) return cache.library
   // The rekordbox export is optional: without it Selector runs on music folders alone.
   const rb = rbTime === null
@@ -124,7 +126,9 @@ async function build(force: boolean): Promise<Library> {
     else if (p && (await exists(p))) t.playable = true
     else t.blocked = 'missing'
   }
-  const library = buildLibrary(rb, apple, await scanFiles(undefined, force))
+  const files = await scanFiles(undefined, force)
+  await applyAnalysis([...rb.tracks.filter((t) => t.source === 'file'), ...files], (t) => locationToPath(t.location))
+  const library = buildLibrary(rb, apple, files)
   const filePaths = new Map<string, string>()
   for (const t of library.tracks) {
     const p = t.playable ? locationToPath(t.location) : null

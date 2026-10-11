@@ -1,0 +1,18 @@
+import { describe, expect, it } from 'vitest'
+import { parse, same } from './midi.ts'
+
+describe('MIDI parsing', () => {
+  it('reads buttons (note on / off) and knobs (control change) with their channel', () => {
+    expect(parse(new Uint8Array([0x90, 0x0b, 0x7f]))).toEqual({ kind: 'note', channel: 0, number: 11, value: 127 })
+    expect(parse(new Uint8Array([0x91, 0x0b, 0x00]))).toEqual({ kind: 'note', channel: 1, number: 11, value: 0 })
+    expect(parse(new Uint8Array([0x81, 0x0c, 0x40]))).toEqual({ kind: 'note', channel: 1, number: 12, value: 0 })
+    expect(parse(new Uint8Array([0xb6, 0x1f, 0x40]))).toEqual({ kind: 'cc', channel: 6, number: 31, value: 64 })
+    expect(parse(new Uint8Array([0xf8]))).toBeNull() // clock and other system messages are ignored
+  })
+  it('matches a learned binding only on the same kind, channel and number', () => {
+    const b = { kind: 'note' as const, channel: 0, number: 11 }
+    expect(same(b, { kind: 'note', channel: 0, number: 11, value: 127 })).toBe(true)
+    expect(same(b, { kind: 'note', channel: 1, number: 11, value: 127 })).toBe(false)
+    expect(same(b, { kind: 'cc', channel: 0, number: 11, value: 64 })).toBe(false)
+  })
+})

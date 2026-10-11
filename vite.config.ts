@@ -88,6 +88,18 @@ function localApi(): Plugin {
           return out
         },
       })
+      route(server, '/api/analysis', {
+        GET: async (_b, s) => (await load(s, '/server/analysis.ts')).analysisStatus(),
+        POST: async (body, s) => {
+          const an = await load(s, '/server/analysis.ts')
+          if ((body as { stop?: boolean })?.stop) return an.stopAnalysis()
+          const lib = await load(s, '/server/library.ts')
+          const files = await load(s, '/server/files.ts')
+          const library = await lib.loadLibrary()
+          const todo = await an.pending(library.tracks, (t: { location: string }) => files.locationToPath(t.location))
+          return an.startAnalysis(todo.map((t: { id: string; title: string; location: string }) => ({ id: t.id, title: t.title, path: files.locationToPath(t.location)! })))
+        },
+      })
       route(server, '/api/export', { POST: async (body, s) => (await load(s, '/server/sets.ts')).exportSets(body) })
     },
   }

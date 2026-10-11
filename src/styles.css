@@ -404,3 +404,33 @@ tbody tr[draggable="true"] { cursor: grab; }
 .decks.with-visuals .deck, .decks.with-visuals .mixer { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
 /* Over bright visuals, glass panels need more body to keep text readable. */
 :root[data-look="glass"] .with-bg-visuals { --panel: rgba(16, 14, 30, 0.6); }
+
+/* --- Drives + analysis (My Library) ---------------------------------------------- */
+.side nav { overflow-y: auto; }
+.libtools { display: grid; gap: 4px; }
+.drive { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.mini { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--panel-line); font: 700 11px var(--font); }
+.mini:hover:not(:disabled) { background: var(--accent); color: #0b0b14; }
+.mini:disabled { opacity: 0.5; cursor: default; }
+.analysis { display: grid; gap: 6px; padding: 4px 10px 8px; }
+.analysis-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
+.analysis .bar { height: 5px; border-radius: 3px; background: var(--panel-line); overflow: hidden; }
+.analysis .bar span { display: block; height: 100%; background: var(--mix); transition: width 0.6s ease; }
+.analysis-now { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analysis .side-note { margin: 0; }
+.side-note.err { color: var(--wf-cue); }
+
+/* --- Controller setup -------------------------------------------------------------- */
+.controller { width: min(720px, calc(100vw - 32px)); }
+.ctl-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctl-status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.ctl-status .dot.on { background: var(--mix); box-shadow: 0 0 10px var(--mix); }
+.ctl-learn { display: grid; gap: 6px; padding: 16px; border-radius: calc(var(--radius) * 0.6); border: 1px solid var(--mix); background: color-mix(in srgb, var(--mix) 10%, transparent); }
+.ctl-learn p { margin: 0; }
+.ctl-step { font: 700 11px var(--num); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.ctl-ask { font: 800 22px var(--font); }
+.row-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ctl-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; max-height: 300px; overflow: auto; }
+.ctl-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
+.ctl-list li.ok > span:first-child::before { content: "✓ "; color: var(--mix); }
+@media (max-width: 640px) { .ctl-list { grid-template-columns: 1fr; } }

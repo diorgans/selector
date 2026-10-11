@@ -21,3 +21,10 @@ export const startStems = (id: string) => call<StemStatus>(`/api/stems?id=${enco
 import type { Session } from '../shared/session.ts'
 export const fetchSessions = () => call<Session[]>('/api/sessions')
 export const saveSession = (s: Session) => call<{ ok: true }>('/api/sessions', { method: 'PUT', body: JSON.stringify(s) })
+
+export type Drive = { name: string; path: string; scanned: boolean }
+export const fetchFolders = () => call<{ dirs: string[]; drives: Drive[] }>('/api/folders')
+export const addFolder = (path: string) => call<{ dirs: string[]; drives: Drive[] }>('/api/folders', { method: 'POST', body: JSON.stringify({ add: path }) })
+export type AnalysisStatus = { running: boolean; total: number; done: number; failed: number; current?: string; installed?: boolean }
+export const fetchAnalysis = () => call<AnalysisStatus>('/api/analysis')
+export const startAnalysis = () => call<AnalysisStatus>('/api/analysis', { method: 'POST', body: '{}' })

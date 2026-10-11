@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { harmonicNeighbors, mixesWell } from '../shared/camelot.ts'
 import type { Library, Track } from '../shared/types.ts'
 import { fetchLibrary, fetchSets, saveSets, type SetList } from './api.ts'
@@ -14,6 +14,9 @@ import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
 import { Shortcuts } from './Shortcuts.tsx'
+import { LibraryTools } from './LibraryTools.tsx'
+import { ControllerSetup } from './ControllerSetup.tsx'
+import { connect as connectMidi, loadMap as loadMidiMap, startController } from './midi.ts'
 import { trackDrag } from './dnd.ts'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
@@ -47,6 +50,11 @@ export function App() {
       }
     }, 'crate')
   const [showKeys, setShowKeys] = useState(false)
+  const [showController, setShowController] = useState(false)
+  // If the controller was set up before, reconnect it quietly on load.
+  useEffect(() => {
+    if (Object.keys(loadMidiMap()).length) connectMidi().then(startController, () => {})
+  }, [])
   const [query, setQuery] = useState('')
   const [keyFilter, setKeyFilter] = useState<string | null>(null)
   const [sort, setSort] = useState<{ by: SortKey; dir: 1 | -1 }>({ by: 'bpm', dir: 1 })
@@ -56,6 +64,9 @@ export function App() {
   const [tab, setTab] = useState<'next' | 'set' | 'keys'>('next')
   const [set, setSet] = useState<SetList>({ id: 'set-1', name: 'Selector set', trackIds: [] })
 
+  const reloadLibrary = useCallback(() => {
+    fetchLibrary().then(setLib, () => {})
+  }, [])
   useEffect(() => {
     fetchLibrary().then(setLib, (e) => setError(String(e.message ?? e)))
     fetchSets().then((s) => s[0] && setSet(s[0]), () => {})
@@ -163,7 +174,7 @@ export function App() {
         document.querySelector<HTMLInputElement>('.top input[type=search]')?.focus()
         return e.preventDefault()
       }
-      if (showKeys || showRecap || el.closest('input, textarea, select, dialog') || e.metaKey || e.ctrlKey) return
+      if (showKeys || showRecap || showController || el.closest('input, textarea, select, dialog') || e.metaKey || e.ctrlKey) return
       const m = getMixer(), { A, B } = m.decks
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
@@ -217,8 +228,9 @@ export function App() {
                 </button>
               ))}
               {lib.stats.playable < 10 && (
-                <p className="side-note">Add music: download songs in the Music app (select › right-click › Download) or plug in your drive. New files appear within 30 seconds.</p>
+                <p className="side-note">Add music: download songs in the Music app (select › right-click › Download) or plug in a drive and press Add below.</p>
               )}
+              <LibraryTools lib={lib} onChanged={reloadLibrary} />
             </>
           ) : (
             <>
@@ -254,6 +266,7 @@ export function App() {
               <option value="window">New window ↗</option>
             </select>
           </label>
+          <button type="button" className="pill" onClick={() => setShowController(true)} aria-haspopup="dialog">🎛 Controller</button>
           <button type="button" className="pill" onClick={() => setShowRecap(true)} aria-haspopup="dialog">Recap</button>
           <button type="button" className="pill keys-btn" onClick={() => setShowKeys(true)} aria-haspopup="dialog">⌨ Keys <kbd>?</kbd></button>
           <div className="look" role="group" aria-label="Design direction">
@@ -344,6 +357,7 @@ export function App() {
       </aside>
       <Shortcuts open={showKeys} onClose={() => setShowKeys(false)} />
       <Recap open={showRecap} onClose={() => setShowRecap(false)} tracker={tracker} />
+      <ControllerSetup open={showController} onClose={() => setShowController(false)} />
     </div>
   )
 }
