@@ -61,3 +61,19 @@ describe('harmonicNeighbors', () => {
     expect(harmonicNeighbors('1B')).toEqual(['1B', '12B', '2B', '1A'])
   })
 })
+
+import { bpmCompatible, mixesWell } from '../shared/camelot.ts'
+describe('bpmCompatible / mixesWell', () => {
+  it('allows about 6%, plus half and double time', () => {
+    expect(bpmCompatible(124, 128)).toBe(true)
+    expect(bpmCompatible(124, 134)).toBe(false)
+    expect(bpmCompatible(140, 70)).toBe(true)
+    expect(bpmCompatible(85, 172)).toBe(true)
+    expect(bpmCompatible(null, 120)).toBe(false)
+  })
+  it('needs both a neighbouring key and a matchable tempo', () => {
+    expect(mixesWell({ key: '8A', bpm: 124 }, { key: '9A', bpm: 126 })).toBe(true)
+    expect(mixesWell({ key: '8A', bpm: 124 }, { key: '3B', bpm: 124 })).toBe(false)
+    expect(mixesWell({ key: '8A', bpm: 124 }, { key: '8A', bpm: 100 })).toBe(false)
+  })
+})

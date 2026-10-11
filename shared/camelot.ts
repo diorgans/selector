@@ -49,3 +49,14 @@ export function harmonicNeighbors(code: string): string[] {
   const other = letter === 'A' ? 'B' : 'A'
   return [`${n}${letter}`, `${wrap(n - 1)}${letter}`, `${wrap(n + 1)}${letter}`, `${n}${other}`]
 }
+
+/** True when `b` can be beatmatched to `a` within `tolerance` (6% ≈ a pitch fader's range), counting half and double time. */
+export function bpmCompatible(a: number | null, b: number | null, tolerance = 0.06): boolean {
+  if (!a || !b) return false
+  return [b, b * 2, b / 2].some((x) => Math.abs(x / a - 1) <= tolerance)
+}
+
+/** Keys work together and the tempos can be matched. */
+export function mixesWell(a: { key: string | null; bpm: number | null }, b: { key: string | null; bpm: number | null }): boolean {
+  return !!a.key && !!b.key && harmonicNeighbors(a.key).includes(b.key) && bpmCompatible(a.bpm, b.bpm)
+}

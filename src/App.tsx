@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { camelotHue, harmonicNeighbors } from '../shared/camelot.ts'
+import { camelotHue, harmonicNeighbors, mixesWell } from '../shared/camelot.ts'
 import type { Library, Track } from '../shared/types.ts'
 import { fetchLibrary } from './api.ts'
 import { CamelotWheel } from './CamelotWheel.tsx'
@@ -59,6 +59,12 @@ export function App() {
     return m
   }, [inCrate])
 
+  // Tracks that mix well with the selected one: neighbouring key and a tempo the pitch fader can reach.
+  const mixable = useMemo(
+    () => new Set(selected ? visible.filter((t) => t.id !== selected.id && mixesWell(selected, t)).map((t) => t.id) : []),
+    [selected, visible],
+  )
+
   if (error) return <main className="empty"><h1>Selector</h1><p>{error}</p></main>
   if (!lib) return <main className="empty"><p>Reading your library…</p></main>
 
@@ -94,7 +100,8 @@ export function App() {
           {keyFilter && (
             <button type="button" className="pill" onClick={() => setKeyFilter(null)}>Mixes with <KeyChip k={keyFilter} /> ✕</button>
           )}
-          <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>
+          {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
+          {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
           <div className="look" role="group" aria-label="Design direction">
             {(['glass', 'console'] as Look[]).map((l) => (
               <button key={l} type="button" aria-pressed={look === l} onClick={() => setLook(l)}>{l === 'glass' ? 'A · Glass' : 'B · Console'}</button>
@@ -117,8 +124,8 @@ export function App() {
             </thead>
             <tbody>
               {visible.map((t) => (
-                <tr key={t.id} className={selected?.id === t.id ? 'sel' : ''} onClick={() => setSelected(t)}>
-                  <td className="title">{t.title}</td>
+                <tr key={t.id} className={selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''} onClick={() => setSelected(t)}>
+                  <td className="title">{mixable.has(t.id) && <span className="mix-dot" title="Mixes well with the selected track" />}{t.title}</td>
                   <td className="artist">{t.artist}</td>
                   <td className="num">{t.bpm ? t.bpm.toFixed(t.bpm % 1 ? 1 : 0) : '–'}</td>
                   <td><KeyChip k={t.key} /></td>
