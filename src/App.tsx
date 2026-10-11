@@ -12,7 +12,7 @@ import { BackgroundVisuals } from './Visuals.tsx'
 import { capDevicePixelRatio } from './dpr.ts'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
-import { libraryGroups } from './libraryGroups.ts'
+import { folderGroupId, folderTree, inFolder, libraryGroups, type FolderNode } from './libraryGroups.ts'
 import { Shortcuts } from './Shortcuts.tsx'
 import { LibraryTools } from './LibraryTools.tsx'
 import { applyGrids } from './grid.ts'
@@ -27,6 +27,32 @@ type Look = 'glass' | 'console'
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
 // Sort keys by wheel position (1A, 1B, 2A…) rather than alphabetically (10A before 1A).
 const keyOrder = (k: string | null) => (k ? Number(k.slice(0, -1)) * 2 + (k.endsWith('B') ? 1 : 0) : 99)
+
+/** A drive's folders as a nested list; folders with subfolders open with ▸. */
+function FolderList({ nodes, depth, crate, pick }: { nodes: FolderNode[]; depth: number; crate: string; pick: (id: string) => void }) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  return (
+    <ul className="folders" role="group">
+      {nodes.map((n) => {
+        const id = folderGroupId(n.path)
+        const isOpen = open.has(n.path)
+        return (
+          <li key={n.path}>
+            <div className="crate-row" style={{ paddingLeft: depth * 12 }}>
+              {n.children.length > 0 ? (
+                <button type="button" className="twisty" aria-expanded={isOpen} aria-label={`${isOpen ? 'Hide' : 'Show'} folders in ${n.name}`} onClick={() => setOpen((s) => { const x = new Set(s); if (x.has(n.path)) x.delete(n.path); else x.add(n.path); return x })}>{isOpen ? '▾' : '▸'}</button>
+              ) : <span className="twisty-space" />}
+              <button type="button" className={crate === id ? 'crate on' : 'crate'} onClick={() => pick(id)} title={n.path}>
+                <span className="crate-name">{n.name.replace(/^\[[^\]]+\]\s*/, '') || n.name}</span><span className="count">{n.count}</span>
+              </button>
+            </div>
+            {isOpen && <FolderList nodes={n.children} depth={depth + 1} crate={crate} pick={pick} />}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
 
 export function App() {
   const [lib, setLib] = useState<Library>()
@@ -52,6 +78,26 @@ export function App() {
     }, 'crate')
   const [showKeys, setShowKeys] = useState(false)
   const [showController, setShowController] = useState(false)
+  // Which drives are expanded into folders in the sidebar (remembered).
+  const [openDrives, setOpenDrives] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('selector-open-drives') ?? '[]'))
+    } catch {
+      return new Set()
+    }
+  })
+  const toggleDrive = (d: string) =>
+    setOpenDrives((s) => {
+      const n = new Set(s)
+      if (n.has(d)) n.delete(d)
+      else n.add(d)
+      try {
+        localStorage.setItem('selector-open-drives', JSON.stringify([...n]))
+      } catch {
+        /* this visit only */
+      }
+      return n
+    })
   // If the controller was set up before, reconnect it quietly on load.
   useEffect(() => {
     if (Object.keys(loadMidiMap()).length) connectMidi().then(startController, () => {})
@@ -86,6 +132,10 @@ export function App() {
   const inCrate = useMemo(() => {
     if (!lib) return []
     if (crate === 'all') return lib.tracks.filter((t) => !t.id.startsWith('f')) // the rekordbox collection
+    if (crate.startsWith('lib:folder:')) {
+      const path = crate.slice('lib:folder:'.length)
+      return lib.tracks.filter((t) => t.source === 'file' && inFolder(t, path))
+    }
     const ids = new Set(
       crate.startsWith('lib:') ? libraryGroups(lib.tracks).find((g) => g.id === crate)?.trackIds : lib.crates.find((c) => c.id === crate)?.trackIds,
     )
@@ -260,11 +310,24 @@ export function App() {
         <nav aria-label={source === 'library' ? 'My music files' : 'Apple Music playlists'}>
           {source === 'library' ? (
             <>
-              {libraryGroups(lib.tracks).filter((g, i) => i < 2 || g.trackIds.length > 0).map((g) => (
-                <button key={g.id} type="button" className={crate === g.id ? 'crate on' : 'crate'} title={g.hint} onClick={() => withTransition(() => setCrate(g.id), 'crate')}>
-                  <span className="crate-name">{g.name}</span><span className="count">{g.trackIds.length}</span>
-                </button>
-              ))}
+              {libraryGroups(lib.tracks).filter((g, i) => i < 2 || g.trackIds.length > 0).map((g) => {
+                const drive = g.id.startsWith('lib:drive:') ? g.id.slice('lib:drive:'.length) : null
+                const folders = drive ? folderTree(lib.tracks, `/Volumes/${drive}`) : []
+                const open = drive ? openDrives.has(drive) : false
+                return (
+                  <div key={g.id} className="crate-group">
+                    <div className="crate-row">
+                      {drive && folders.length > 0 && (
+                        <button type="button" className="twisty" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} folders on ${drive}`} onClick={() => toggleDrive(drive)}>{open ? '▾' : '▸'}</button>
+                      )}
+                      <button type="button" className={crate === g.id ? 'crate on' : 'crate'} title={g.hint} onClick={() => withTransition(() => setCrate(g.id), 'crate')}>
+                        <span className="crate-name">{g.name}</span><span className="count">{g.trackIds.length}</span>
+                      </button>
+                    </div>
+                    {open && <FolderList nodes={folders} depth={1} crate={crate} pick={(id) => withTransition(() => setCrate(id), 'crate')} />}
+                  </div>
+                )
+              })}
               {lib.stats.playable < 10 && (
                 <p className="side-note">Add music: download songs in the Music app (select › right-click › Download) or plug in a drive and press Add below.</p>
               )}

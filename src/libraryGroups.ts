@@ -5,7 +5,7 @@ export type Group = { id: string; name: string; hint: string; trackIds: string[]
 
 export function libraryGroups(tracks: Track[]): Group[] {
   const files = tracks.filter((t) => t.source === 'file')
-  const where = (t: Track) => decodeURI(t.location)
+  const where = (t: Track) => trackPath(t)
   const make = (id: string, name: string, hint: string, pick: (t: Track) => boolean): Group => ({ id: `lib:${id}`, name, hint, trackIds: files.filter(pick).map((t) => t.id) })
 
   const groups = [
@@ -23,3 +23,41 @@ export function libraryGroups(tracks: Track[]): Group[] {
   )
   return groups
 }
+
+/** A track's file path, decoded by hand (a "#" in a folder name is part of the name). */
+export function trackPath(t: Track): string {
+  const rest = t.location.replace(/^file:\/\/localhost/, '')
+  try {
+    return decodeURIComponent(rest)
+  } catch {
+    return rest
+  }
+}
+
+export type FolderNode = { name: string; path: string; count: number; children: FolderNode[] }
+
+/** The folders on a drive that hold music, nested, with how many songs are inside each. */
+export function folderTree(tracks: Track[], root: string): FolderNode[] {
+  const top: FolderNode = { name: '', path: root, count: 0, children: [] }
+  for (const t of tracks) {
+    if (t.source !== 'file') continue
+    const p = trackPath(t)
+    if (!p.startsWith(`${root}/`)) continue
+    const parts = p.slice(root.length + 1).split('/').slice(0, -1) // folders only
+    let node = top
+    let path = root
+    for (const name of parts) {
+      path = `${path}/${name}`
+      let child = node.children.find((c) => c.name === name)
+      if (!child) node.children.push((child = { name, path, count: 0, children: [] }))
+      child.count++
+      node = child
+    }
+  }
+  const sort = (n: FolderNode) => (n.children.sort((a, b) => a.name.localeCompare(b.name)), n.children.forEach(sort))
+  sort(top)
+  return top.children
+}
+
+export const folderGroupId = (path: string) => `lib:folder:${path}`
+export const inFolder = (t: Track, path: string) => trackPath(t).startsWith(`${path}/`)
