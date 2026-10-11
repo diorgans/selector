@@ -8,8 +8,13 @@ import { computeWaveform, type Waveform } from './waveform.ts'
 import { FxUnit } from './fx.ts'
 
 let ctx: AudioContext | undefined
+let stretchReady: Promise<void> | undefined
 export function audio(): AudioContext {
-  ctx ??= new AudioContext({ latencyHint: 'interactive' })
+  if (!ctx) {
+    ctx = new AudioContext({ latencyHint: 'interactive' })
+    // The key-lock time-stretcher runs on the audio thread (public/stretch-worklet.js).
+    stretchReady = ctx.audioWorklet.addModule('/stretch-worklet.js')
+  }
   return ctx
 }
 
@@ -194,6 +199,7 @@ export type DeckState = {
   playing: boolean
   rate: number // 1 = original speed
   synced: boolean
+  keyLock: boolean // tempo changes keep the original pitch
   stemsLoaded: boolean // playing from separated stems instead of the full mix
   stemLevels: Record<StemGroup, number>
 }
@@ -202,8 +208,10 @@ export class Deck {
   readonly channel: Channel
   buffer?: AudioBuffer
   waveform?: Waveform
-  state: DeckState = { loading: false, playing: false, rate: 1, synced: false, stemsLoaded: false, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
+  state: DeckState = { loading: false, playing: false, rate: 1, synced: false, keyLock: false, stemsLoaded: false, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
   private stems?: Map<StemPart, AudioBuffer>
+  /** Key-lock player: one worklet node feeding the full mix or the four stems. */
+  private stretch?: { node: AudioWorkletNode; kind: 'full' | 'stems' }
   private stemGains = new Map<StemPart, GainNode>()
   cuePoint = 0
   private sources: AudioBufferSourceNode[] = []
@@ -223,6 +231,33 @@ export class Deck {
     }
   }
 
+  /** Build the key-lock player for whatever is loaded (full mix, or stems if they're on). */
+  private buildStretch() {
+    this.stretch?.node.disconnect()
+    this.stretch = undefined
+    if (!this.buffer) return
+    const kind = this.stems && this.state.stemsLoaded ? 'stems' : 'full'
+    const buffers = kind === 'stems' ? STEM_PARTS.map((p) => this.stems!.get(p)!) : [this.buffer]
+    const dests: AudioNode[] = kind === 'stems' ? STEM_PARTS.map((p) => this.stemGains.get(p)!) : [this.channel.input]
+    const node = new AudioWorkletNode(audio(), 'stretch-player', { numberOfInputs: 0, numberOfOutputs: buffers.length, outputChannelCount: buffers.map(() => 2) })
+    const sources = buffers.map((b) => [b.getChannelData(0).slice(), (b.numberOfChannels > 1 ? b.getChannelData(1) : b.getChannelData(0)).slice()])
+    node.port.postMessage({ type: 'load', sources }, sources.flat().map((a) => a.buffer))
+    dests.forEach((d, i) => node.connect(d, i))
+    this.stretch = { node, kind }
+  }
+
+  /** Key lock on/off: keep the pitch when changing tempo. Switches seamlessly while playing. */
+  async setKeyLock(on: boolean) {
+    await stretchReady
+    const pos = this.position()
+    const pending = this.state.playing && this.startedAt > audio().currentTime ? this.startedAt : undefined
+    if (this.state.playing) this.stopSources()
+    this.state.keyLock = on
+    if (on && this.buffer && !this.stretch) this.buildStretch()
+    if (this.state.playing) this.startSources(pending ? this.startPos : pos, pending)
+    this.emit({ keyLock: on })
+  }
+
   /** Swap playback to separated stems (keeps position; seamless if playing). */
   async loadStems(id: string) {
     const token = this.loadToken
@@ -236,13 +271,13 @@ export class Deck {
     if (token !== this.loadToken || this.state.track?.id !== id) return // another track was loaded meanwhile
     this.stems = new Map(buffers)
     const pos = this.position()
-    if (this.state.playing) {
-      // Keep a scheduled (automix) start time if playback hasn't begun yet.
-      const pending = this.startedAt > audio().currentTime ? this.startedAt : undefined
-      this.stopSources()
-      this.state.stemsLoaded = true
-      this.startSources(pos, pending)
-    }
+    const playing = this.state.playing
+    // Keep a scheduled (automix) start time if playback hasn't begun yet.
+    const pending = playing && this.startedAt > audio().currentTime ? this.startedAt : undefined
+    if (playing) this.stopSources()
+    this.state.stemsLoaded = true
+    if (this.state.keyLock) this.buildStretch()
+    if (playing) this.startSources(pending ? this.startPos : pos, pending)
     this.emit({ stemsLoaded: true })
   }
 
@@ -299,6 +334,8 @@ export class Deck {
     this.startPos = 0
     this.cuePoint = track.cues?.find((c) => c.num === -1)?.timeSec ?? track.firstBeatSec ?? 0
     this.stems = undefined
+    this.stretch?.node.disconnect()
+    this.stretch = undefined
     this.emit({ track, loading: true, error: undefined, playing: false, rate: 1, synced: false, stemsLoaded: false })
     try {
       const res = await fetch(`/api/audio?id=${encodeURIComponent(track.id)}`)
@@ -309,6 +346,7 @@ export class Deck {
       this.waveform = computeWaveform(buffer)
       if (track.bpm) this.channel.fx.setBeatSec(60 / track.bpm)
       this.startPos = this.cuePoint
+      if (this.state.keyLock) this.buildStretch()
       this.emit({ loading: false })
     } catch (err) {
       if (token !== this.loadToken) return
@@ -319,6 +357,7 @@ export class Deck {
   }
 
   private stopSources() {
+    this.stretch?.node.port.postMessage({ type: 'stop' })
     for (const s of this.sources) {
       s.onended = null
       try {
@@ -353,6 +392,19 @@ export class Deck {
       ? STEM_PARTS.map((p) => [this.stems!.get(p)!, this.stemGains.get(p)!])
       : [[this.buffer, this.channel.input]]
     const when = startAt ?? c.currentTime
+    if (this.state.keyLock && this.stretch) {
+      this.stretch.node.port.postMessage({ type: 'start', when, offset: Math.max(0, at), rate: this.state.rate })
+      this.stretch.node.port.onmessage = (e) => {
+        if (e.data?.type === 'ended' && this.state.playing && this.position() >= this.duration - 0.1) {
+          this.startPos = this.duration
+          this.emit({ playing: false })
+        }
+      }
+      this.sources = []
+      this.startedAt = when
+      this.startPos = at
+      return
+    }
     const sources = plan.map(([buffer, dest]) => {
       const src = new AudioBufferSourceNode(c, { buffer, playbackRate: this.state.rate })
       src.connect(dest)
@@ -429,6 +481,7 @@ export class Deck {
         this.startedAt = now
       } // else: a scheduled start hasn't happened yet; position stays at startPos until then
       for (const s of this.sources) s.playbackRate.setValueAtTime(r, now)
+      this.stretch?.node.port.postMessage({ type: 'rate', rate: r })
     }
     if (this.bpm) this.channel.fx.setBeatSec(60 / (this.bpm * r))
     this.emit({ rate: r, synced })

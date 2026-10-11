@@ -356,3 +356,8 @@ tbody tr[draggable="true"] { cursor: grab; }
 .fx-amount { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; gap: 8px; align-items: center; font: 700 10px var(--num); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .fx-amount input { width: 100%; accent-color: var(--wf-cue); }
 .fx-amount .pct { text-align: right; font-variant-numeric: tabular-nums; }
+.tempo-row { grid-template-columns: minmax(0, 1fr) 70px auto auto; }
+.keylock { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--panel-line); font: 700 11px var(--num); color: var(--muted); white-space: nowrap; }
+.keylock[aria-pressed="true"] { background: var(--mix); color: #0b0b14; border-color: var(--mix); }
+.tempo-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.tempo-row .knob.tempo { grid-column: 1 / -1; }

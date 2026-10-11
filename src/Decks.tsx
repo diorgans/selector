@@ -413,6 +413,9 @@ function TempoControl({ deck }: { deck: Deck }) {
           }}
         />
       </label>
+      <button type="button" className="keylock" aria-pressed={st.keyLock} onClick={() => void deck.setKeyLock(!st.keyLock)} title="Key lock: change the tempo without changing the pitch">
+        🔒 Key
+      </button>
       <button type="button" className="reset" disabled={!bpm || Math.abs(st.rate - 1) < 0.0005} onClick={() => deck.setRate(1)} title={bpm ? `Back to the original ${bpm.toFixed(1)} BPM` : undefined}>
         Reset
       </button>
