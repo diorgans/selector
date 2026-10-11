@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { getMixer } from './audio/engine.ts'
 import { listOutputs, savedOutput, useOutput, type Output } from './output.ts'
+import { browseStepsPerClick, relative, setBrowseStepsPerClick } from './midi.ts'
 import { connect, ddjSrPreset, detectRel, deviceName, lastAction, loadMap, onAction, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
 
 /** The controller window: connect, learn each control, then use it. */
@@ -13,6 +14,24 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
   const [last, setLast] = useState<Msg>()
   const [action, setAction] = useState(lastAction)
   const [outputs, setOutputs] = useState<Output[]>()
+  const [calib, setCalib] = useState<'idle' | 'waiting' | string>('idle')
+  // Browse calibration: add up the steps one physical click sends (messages within ~0.4 s).
+  useEffect(() => {
+    if (calib !== 'waiting') return
+    const b = loadMap().browse
+    if (!b) return setCalib('Map the browse knob first (Use DDJ-SR preset or Learn).')
+    let total = 0
+    let timer = 0
+    return onMessage((m) => {
+      if (!same(b, m)) return
+      total += Math.abs(relative(m.value, b.rel))
+      clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        setBrowseStepsPerClick(total)
+        setCalib(`Done: one click = ${total} step${total === 1 ? '' : 's'}. Each click now moves one song.`)
+      }, 400)
+    })
+  }, [calib])
   const [current, setCurrent] = useState<Output | null>(savedOutput)
   const [, bump] = useReducer((n: number) => n + 1, 0)
   useEffect(() => getMixer().master.subscribe(bump), [])
@@ -154,6 +173,12 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
         )}
         <p className="hint">Last message: {last ? `${last.kind === 'note' ? 'button' : 'knob'} ch ${last.channel + 1} #${last.number} = ${last.value}` : 'none yet'}</p>
         <p className="ctl-action" role="status">Last action: {action || 'press a mapped button'}</p>
+        <div className="ctl-calib">
+          <button type="button" className="pill" disabled={!device || calib === 'waiting'} onClick={() => setCalib('waiting')}>Calibrate browse wheel</button>
+          <span className="hint" role="status">
+            {calib === 'waiting' ? 'Turn the browse wheel exactly ONE click…' : calib === 'idle' ? `Now: ${browseStepsPerClick() ?? 'auto'} step(s) per click` : calib}
+          </span>
+        </div>
         <ul className="ctl-list">
           {STEPS.map((st, i) => (
             <li key={st.id} className={map[st.id] ? 'ok' : ''}>

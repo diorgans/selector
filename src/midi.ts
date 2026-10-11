@@ -56,16 +56,36 @@ export const STEPS: Step[] = [
  * so the smallest step seen so far counts as one click, and bigger values (fast
  * spins) count as several. Leftovers carry over so nothing is lost.
  */
-export function makeClicker() {
+export function makeClicker(perClick?: () => number | undefined) {
   let unit = Infinity
   let carry = 0
   return (delta: number) => {
     if (!delta) return 0
     unit = Math.min(unit, Math.abs(delta))
-    carry += delta / unit
+    // A calibrated value (total steps one physical click produced) wins over the guess.
+    const u = perClick?.() || unit
+    carry += delta / u
     const clicks = carry > 0 ? Math.floor(carry) : Math.ceil(carry)
     carry -= clicks
     return clicks
+  }
+}
+
+const STEPS_KEY = 'selector-browse-steps'
+/** Steps the browse wheel sends for one physical click (set by calibration). */
+export function browseStepsPerClick(): number | undefined {
+  try {
+    const v = Number(localStorage.getItem(STEPS_KEY))
+    return v > 0 ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+export function setBrowseStepsPerClick(v: number) {
+  try {
+    localStorage.setItem(STEPS_KEY, String(v))
+  } catch {
+    /* this visit only */
   }
 }
 
@@ -188,7 +208,7 @@ export function startController() {
   started = true
   const mixer = getMixer()
   const jogRelease = { A: 0, B: 0 }
-  const browseClicks = makeClicker()
+  const browseClicks = makeClicker(() => browseStepsPerClick())
   const beatClicks = { A: makeClicker(), B: makeClicker() }
   onMessage((m) => {
     const map = loadMap()
