@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Tracks</key><dict>
+    <key>10</key><dict><key>Track ID</key><integer>10</integer><key>Name</key><string>Night Drive (feat. Someone Else)</string><key>Artist</key><string>Test Artist</string><key>Total Time</key><integer>200500</integer><key>Persistent ID</key><string>AAA</string></dict>
+    <key>11</key><dict><key>Track ID</key><integer>11</integer><key>Name</key><string>Not In Rekordbox</string><key>Artist</key><string>Nobody</string><key>Total Time</key><integer>100000</integer><key>Persistent ID</key><string>BBB</string></dict>
+  </dict>
+  <key>Playlists</key><array>
+    <dict><key>Name</key><string>Library</string><key>Master</key><true/><key>Playlist Persistent ID</key><string>P0</string></dict>
+    <dict><key>Name</key><string>House Grooves</string><key>Playlist Persistent ID</key><string>P1</string><key>Playlist Items</key><array><dict><key>Track ID</key><integer>10</integer></dict><dict><key>Track ID</key><integer>11</integer></dict></array></dict>
+  </array>
+</dict></plist>
