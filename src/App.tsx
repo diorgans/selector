@@ -22,6 +22,7 @@ export function App() {
   const [selected, setSelected] = useState<Track>()
   const [look, setLook] = useState<Look>(() => (new URLSearchParams(location.search).get('look') as Look) ?? 'glass')
 
+  const [tab, setTab] = useState<'next' | 'set' | 'keys'>('next')
   const [set, setSet] = useState<SetList>({ id: 'set-1', name: 'Selector set', trackIds: [] })
 
   useEffect(() => {
@@ -153,23 +154,40 @@ export function App() {
       </main>
 
       <aside className="detail panel">
-        <CamelotWheel counts={keyCounts} selected={selected?.key ?? keyFilter} onPick={(k) => setKeyFilter((f) => (f === k ? null : k))} />
         {selected ? (
           <div className="now">
             <div className="now-label">Selected</div>
-            <div className="now-title">{selected.title}</div>
-            <div className="now-artist">{selected.artist}</div>
-            <div className="now-meta">
+            <div className="now-row">
+              <div className="now-text">
+                <div className="now-title">{selected.title}</div>
+                <div className="now-artist">{selected.artist}</div>
+              </div>
               <span className="big">{selected.bpm?.toFixed(0) ?? '–'}<small>BPM</small></span>
               <KeyChip k={selected.key} />
-              <button type="button" className="pill" disabled={inSet.has(selected.id)} onClick={() => addToSet(selected)}>{inSet.has(selected.id) ? 'In set' : '＋ Add to set'}</button>
             </div>
+            <button type="button" className="pill" disabled={inSet.has(selected.id)} onClick={() => addToSet(selected)}>{inSet.has(selected.id) ? '✓ In set' : '＋ Add to set'}</button>
           </div>
         ) : (
-          <p className="hint">Pick a track to see what mixes with it. Click a slice of the wheel to filter by key.</p>
+          <p className="hint">Pick a track to see what mixes with it.</p>
         )}
-        {selected && <UpNext lib={lib} current={selected} pool={inCrate} exclude={inSet} onPick={setSelected} onAdd={addToSet} />}
-        <SetBuilder set={set} tracksById={tracksById} onChange={setSet} onSelect={setSelected} />
+
+        <div className="tabs" role="tablist" aria-label="Panels">
+          {([['next', 'Up next'], ['set', `Set · ${set.trackIds.length}`], ['keys', 'Keys']] as const).map(([id, label]) => (
+            <button key={id} type="button" role="tab" id={`tab-${id}`} aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </div>
+        <div className="tab-panel" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+          {tab === 'next' && (selected
+            ? <UpNext lib={lib} current={selected} pool={inCrate} exclude={inSet} onPick={setSelected} onAdd={addToSet} />
+            : <p className="hint">Suggestions appear here once you pick a track.</p>)}
+          {tab === 'set' && <SetBuilder set={set} tracksById={tracksById} onChange={setSet} onSelect={setSelected} />}
+          {tab === 'keys' && (
+            <div className="keys">
+              <CamelotWheel counts={keyCounts} selected={selected?.key ?? keyFilter} onPick={(k) => setKeyFilter((f) => (f === k ? null : k))} />
+              <p className="hint">Brighter slices have more tracks in this crate. Outlined slices mix with the selected key. Click a slice to show only tracks that mix with it.</p>
+            </div>
+          )}
+        </div>
       </aside>
     </div>
   )
