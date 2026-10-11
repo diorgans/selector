@@ -15,6 +15,7 @@ import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
 import { Shortcuts } from './Shortcuts.tsx'
 import { LibraryTools } from './LibraryTools.tsx'
+import { applyGrids } from './grid.ts'
 import { ControllerSetup } from './ControllerSetup.tsx'
 import { connect as connectMidi, loadMap as loadMidiMap, setBrowseHandlers, startController } from './midi.ts'
 import { trackDrag } from './dnd.ts'
@@ -65,10 +66,10 @@ export function App() {
   const [set, setSet] = useState<SetList>({ id: 'set-1', name: 'Selector set', trackIds: [] })
 
   const reloadLibrary = useCallback(() => {
-    fetchLibrary().then(setLib, () => {})
+    fetchLibrary().then((l) => setLib({ ...l, tracks: applyGrids(l.tracks) }), () => {})
   }, [])
   useEffect(() => {
-    fetchLibrary().then(setLib, (e) => setError(String(e.message ?? e)))
+    fetchLibrary().then((l) => setLib({ ...l, tracks: applyGrids(l.tracks) }), (e) => setError(String(e.message ?? e)))
     fetchSets().then((s) => s[0] && setSet(s[0]), () => {})
   }, [])
   // Save the set shortly after each change (one set for now; the file holds a list for later).
@@ -179,6 +180,7 @@ export function App() {
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
         s: () => A.syncTo(B), k: () => B.syncTo(A),
+        d: () => A.autoLoop(), j: () => B.autoLoop(),
         e: () => A.channel.fx.slots[0].setOn(!A.channel.fx.slots[0].on), i: () => B.channel.fx.slots[0].setOn(!B.channel.fx.slots[0].on),
         z: () => selected?.playable && loadTo('A', selected), m: () => selected?.playable && loadTo('B', selected),
         ArrowLeft: () => m.setCrossfader(m.crossfader - 0.05), ArrowRight: () => m.setCrossfader(m.crossfader + 0.05),

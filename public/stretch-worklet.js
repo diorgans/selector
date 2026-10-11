@@ -37,6 +37,10 @@ class StretchPlayer extends AudioWorkletProcessor {
     } else if (m.type === 'start') {
       this.rate = m.rate
       this.begin(Math.round(m.when * sampleRate), m.offset * sampleRate)
+    } else if (m.type === 'loop') {
+      // Loop region in samples (null = no loop). The read position wraps at its end.
+      this.loopStart = m.start === null ? null : m.start * sampleRate
+      this.loopEnd = m.end === null ? null : m.end * sampleRate
     } else if (m.type === 'stop') {
       this.playing = false
     }
@@ -110,6 +114,7 @@ class StretchPlayer extends AudioWorkletProcessor {
     this.readPos = 0
     this.prevStart = start
     this.nominal += HS * this.rate
+    if (this.loopEnd != null && this.nominal >= this.loopEnd) this.nominal -= this.loopEnd - this.loopStart
   }
 
   process(_inputs, outputs) {

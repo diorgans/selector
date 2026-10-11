@@ -201,6 +201,8 @@ export type DeckState = {
   synced: boolean
   keyLock: boolean // tempo changes keep the original pitch
   stemsLoaded: boolean // playing from separated stems instead of the full mix
+  loop: { start: number; end: number } | null // active loop, in track seconds
+  loopBeats: number // size for the next auto loop
   stemLevels: Record<StemGroup, number>
 }
 
@@ -208,7 +210,7 @@ export class Deck {
   readonly channel: Channel
   buffer?: AudioBuffer
   waveform?: Waveform
-  state: DeckState = { loading: false, playing: false, rate: 1, synced: false, keyLock: false, stemsLoaded: false, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
+  state: DeckState = { loading: false, playing: false, rate: 1, synced: false, keyLock: false, stemsLoaded: false, loop: null, loopBeats: 4, stemLevels: { vocals: 1, instruments: 1, drums: 1 } }
   private stems?: Map<StemPart, AudioBuffer>
   /** Key-lock player: one worklet node feeding the full mix or the four stems. */
   private stretch?: { node: AudioWorkletNode; kind: 'full' | 'stems' }
@@ -325,7 +327,11 @@ export class Deck {
   position(): number {
     if (!this.state.playing) return this.startPos
     // max(0, …): a deck scheduled to start in the future holds at its start point until then.
-    return Math.min(this.duration, this.startPos + Math.max(0, audio().currentTime - this.startedAt) * this.state.rate)
+    const raw = this.startPos + Math.max(0, audio().currentTime - this.startedAt) * this.state.rate
+    const loop = this.state.loop
+    // Inside a loop the audio wraps from its end back to its start; so does the position.
+    if (loop && raw >= loop.end && this.startPos < loop.end) return loop.start + ((raw - loop.start) % (loop.end - loop.start))
+    return Math.min(this.duration, raw)
   }
 
   async load(track: Track) {
@@ -336,7 +342,9 @@ export class Deck {
     this.stems = undefined
     this.stretch?.node.disconnect()
     this.stretch = undefined
-    this.emit({ track, loading: true, error: undefined, playing: false, rate: 1, synced: false, stemsLoaded: false })
+    this.lastLoop = null
+    this.loopIn = null
+    this.emit({ track, loading: true, error: undefined, playing: false, rate: 1, synced: false, stemsLoaded: false, loop: null })
     try {
       const res = await fetch(`/api/audio?id=${encodeURIComponent(track.id)}`)
       if (!res.ok) throw new Error(res.status === 404 ? 'This track isn’t a playable file.' : `Couldn’t load (${res.status}).`)
@@ -408,6 +416,7 @@ export class Deck {
     const sources = plan.map(([buffer, dest]) => {
       const src = new AudioBufferSourceNode(c, { buffer, playbackRate: this.state.rate })
       src.connect(dest)
+      if (this.state.loop) Object.assign(src, { loop: true, loopStart: this.state.loop.start, loopEnd: this.state.loop.end })
       src.start(when, Math.max(0, at))
       return src
     })
@@ -445,6 +454,14 @@ export class Deck {
   }
 
   seek(t: number) {
+    // Jumping outside an active loop leaves it.
+    const l = this.state.loop
+    if (l && (t < l.start || t >= l.end)) {
+      this.state.loop = null
+      for (const src of this.sources) src.loop = false
+      this.stretchLoop()
+      this.state = { ...this.state, loop: null }
+    }
     const to = Math.max(0, Math.min(this.duration, t))
     if (this.state.playing) {
       this.stopSources()
@@ -462,6 +479,119 @@ export class Deck {
       this.cuePoint = this.snapToBeat(this.startPos)
       this.seek(this.cuePoint)
     }
+  }
+
+  // --- Loops ------------------------------------------------------------------------
+  private lastLoop: { start: number; end: number } | null = null
+  private loopIn: number | null = null
+
+  /** Start (or change) a loop. Playback carries on seamlessly; sources wrap natively. */
+  setLoop(start: number, end: number) {
+    if (!this.buffer || end - start < 0.02) return
+    const s = Math.max(0, start), e = Math.min(this.duration, end)
+    if (this.state.playing && this.startedAt <= audio().currentTime) {
+      // Re-base the clock at the current spot so position maths can wrap from here.
+      const pos = this.position()
+      this.startPos = pos >= e ? s : pos
+      this.startedAt = audio().currentTime
+      if (pos >= e) {
+        this.state.loop = { start: s, end: e }
+        this.stopSources()
+        this.startSources(s)
+      }
+    }
+    this.state.loop = { start: s, end: e }
+    this.lastLoop = { start: s, end: e }
+    for (const src of this.sources) Object.assign(src, { loop: true, loopStart: s, loopEnd: e })
+    this.stretchLoop()
+    this.emit({ loop: { start: s, end: e } })
+  }
+
+  exitLoop() {
+    if (!this.state.loop) return
+    const pos = this.position()
+    if (this.state.playing && this.startedAt <= audio().currentTime) {
+      this.startPos = pos
+      this.startedAt = audio().currentTime
+    }
+    this.state.loop = null
+    for (const src of this.sources) src.loop = false
+    this.stretchLoop()
+    this.emit({ loop: null })
+  }
+
+  private stretchLoop() {
+    const l = this.state.loop
+    this.stretch?.node.port.postMessage({ type: 'loop', start: l?.start ?? null, end: l?.end ?? null })
+  }
+
+  private beatSec() {
+    return this.bpm ? 60 / this.bpm : 0.5
+  }
+
+  /** Move the beatgrid: shift beat 1 by `seconds` (± a few ms per click). */
+  nudgeGrid(seconds: number) {
+    const t = this.state.track
+    if (!t || !this.bpm) return
+    const beat = 60 / this.bpm
+    t.firstBeatSec = (((t.firstBeatSec ?? 0) + seconds) % beat + beat) % beat
+    this.emit()
+    return t.firstBeatSec
+  }
+
+  /** "The beat is here": put beat 1 of the grid at the playhead (wrapped into the first beat). */
+  setGridHere() {
+    const t = this.state.track
+    if (!t || !this.bpm) return
+    const beat = 60 / this.bpm
+    t.firstBeatSec = ((this.position() % beat) + beat) % beat
+    this.emit()
+    return t.firstBeatSec
+  }
+
+  /** AUTO LOOP: loop `beats` from the beat at or just before the playhead; press again to exit. */
+  autoLoop(beats = this.state.loopBeats) {
+    if (this.state.loop) return this.exitLoop()
+    const beat = this.beatSec()
+    const first = this.state.track?.firstBeatSec ?? 0
+    const pos = this.position()
+    const start = this.bpm ? first + Math.floor((pos - first) / beat + 1e-6) * beat : pos
+    this.setLoop(start, start + beats * beat)
+  }
+
+  /** ½X / 2X: change the loop length (or the size of the next auto loop). */
+  resizeLoop(factor: number) {
+    const beats = Math.min(32, Math.max(1 / 16, this.state.loopBeats * factor))
+    this.state.loopBeats = beats
+    const l = this.state.loop
+    if (l) this.setLoop(l.start, l.start + beats * this.beatSec())
+    else this.emit({ loopBeats: beats })
+  }
+
+  /** LOOP IN marks the start; LOOP OUT closes the loop there, rounded to whole beats. */
+  setLoopIn() {
+    this.loopIn = this.snapToBeat(this.position())
+    this.emit()
+  }
+  setLoopOut() {
+    if (this.loopIn === null) return
+    const beat = this.beatSec()
+    const n = Math.max(1, Math.round((this.position() - this.loopIn) / beat))
+    this.state.loopBeats = n
+    this.setLoop(this.loopIn, this.loopIn + n * beat)
+    this.loopIn = null
+  }
+  get pendingLoopIn() {
+    return this.loopIn
+  }
+
+  /** RELOOP / EXIT: leave the loop, or jump back into the last one. */
+  reloop() {
+    if (this.state.loop) return this.exitLoop()
+    if (!this.lastLoop) return
+    const { start, end } = this.lastLoop
+    this.seek(start)
+    this.setLoop(start, end)
   }
 
   hotCue(num: number) {

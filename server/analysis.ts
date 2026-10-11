@@ -10,7 +10,7 @@ import type { Track } from '../shared/types.ts'
 // BPM / key / first-beat analysis for music files that don't have them, with
 // Essentia in ~/.selector/py. One Python process works through a queue; results
 // are saved to ~/.selector/analysis.json (keyed by path + size + modified time),
-// so each song is analysed once.
+// so each song is analysed once. Beat positions come from the kick drum (analyze.py).
 
 const PY = process.env.SELECTOR_PYTHON ?? join(homedir(), '.selector', 'py', 'bin', 'python')
 const STORE = process.env.SELECTOR_ANALYSIS ?? join(homedir(), '.selector', 'analysis.json')

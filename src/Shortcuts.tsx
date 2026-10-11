@@ -11,6 +11,7 @@ export const KEYS: { group: string; items: { keys: string[]; does: string }[] }[
       { keys: ['A', 'L'], does: 'Cue: while playing, jump back to the cue point; while stopped, set it here' },
       { keys: ['S', 'K'], does: 'Sync: match the other deck’s tempo and line up the beats' },
       { keys: ['Z', 'M'], does: 'Load the selected track onto deck A / deck B' },
+      { keys: ['D', 'J'], does: 'Auto loop on / off for deck A / deck B (size set with ½ and ×2 on the deck)' },
       { keys: ['E', 'I'], does: 'Effect slot 1 on / off for deck A / deck B (each deck has three effect slots)' },
     ],
   },

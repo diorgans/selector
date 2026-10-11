@@ -452,3 +452,17 @@ tbody tr.cursor { background: var(--row-sel); box-shadow: inset 3px 0 0 var(--ac
 .fxslot select { grid-column: 1 / -1; }
 .fxslot input[type="range"] { grid-column: 1; grid-row: 2; align-self: center; }
 .fxslot .fx-on { grid-column: 2; grid-row: 2; }
+
+/* --- Loops ------------------------------------------------------------------------- */
+:root { --wf-loop: rgba(94, 234, 212, 0.18); }
+:root[data-look="console"] { --wf-loop: rgba(57, 255, 159, 0.16); }
+.loops { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.loops button { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--panel-line); font: 700 11px var(--num); }
+.loops button:disabled { opacity: 0.35; cursor: default; }
+.loops .loop-auto { position: relative; padding-right: 16px; }
+.loops .loop-auto kbd { position: absolute; right: 2px; bottom: 1px; border: 0; background: none; padding: 0 2px; font-size: 8px; min-width: 0; }
+.loops .loop-auto[aria-pressed="true"] { background: var(--mix); color: #0b0b14; border-color: var(--mix); }
+.loops button.armed { border-color: var(--mix); color: var(--mix); }
+.grid-ctl { display: inline-flex; gap: 2px; align-items: center; margin-left: auto; }
+.grid-label { font: 700 9px var(--num); color: var(--muted); letter-spacing: 0.08em; margin-right: 2px; }
+.grid-ctl button { padding: 0 6px; }

@@ -7,6 +7,7 @@ import { BackgroundVisuals } from './Visuals.tsx'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
+import { saveGrid } from './grid.ts'
 import { KeyChip } from './Sidebar.tsx'
 
 const HOT_CUES = 'ABCDEFGH'
@@ -60,7 +61,7 @@ function Waveforms({ mixer }: { mixer: Mixer }) {
         const g = cv.getContext('2d')!
         g.setTransform(dpr, 0, 0, dpr, 0, 0)
         g.clearRect(0, 0, w, h)
-        const colors = { low: cssVar('--wf-low'), mid: cssVar('--wf-mid'), high: cssVar('--wf-high'), grid: cssVar('--wf-grid'), cue: cssVar('--wf-cue'), head: cssVar('--fg') }
+        const colors = { low: cssVar('--wf-low'), mid: cssVar('--wf-mid'), high: cssVar('--wf-high'), grid: cssVar('--wf-grid'), cue: cssVar('--wf-cue'), head: cssVar('--fg'), loop: cssVar('--wf-loop') }
         const lane = h / 2
         ;(['A', 'B'] as const).forEach((name, i) => drawLane(g, mixer.decks[name], 0, i * lane, w, lane, colors))
         g.fillStyle = colors.head
@@ -115,6 +116,13 @@ function drawLane(g: CanvasRenderingContext2D, deck: Deck, x0: number, y0: numbe
     g.fillRect(x0 + px, mid - hi * amp * 0.45, 1, hi * amp * 0.9)
   }
   g.globalAlpha = 1
+  // Active loop: a shaded band between its start and end.
+  const loop = deck.state.loop
+  if (loop) {
+    const xa = x0 + (loop.start - t0) / secPerPx, xb = x0 + (loop.end - t0) / secPerPx
+    g.fillStyle = c.loop
+    g.fillRect(Math.max(x0, xa), y0, Math.min(w, xb) - Math.max(x0, xa), h)
+  }
   // Cue point and hot cues.
   const marks = [{ t: deck.cuePoint, label: 'CUE' }, ...(deck.state.track?.cues ?? []).filter((q) => q.num >= 0).map((q) => ({ t: q.timeSec, label: HOT_CUES[q.num] }))]
   for (const m of marks) {
@@ -271,6 +279,7 @@ function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDr
           return <button key={letter} type="button" disabled={!cue || !deck.buffer} onClick={() => deck.hotCue(i)} title={cue ? cue.name || `Hot cue ${letter}` : `No hot cue ${letter} (set them in rekordbox)`}>{letter}</button>
         })}
       </div>
+      <LoopControls deck={deck} />
       <StemControls deck={deck} />
       <FxControls deck={deck} />
       <TempoControl deck={deck} />
@@ -507,6 +516,35 @@ function FxControls({ deck }: { deck: Deck }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+const loopLabel = (b: number) => (b >= 1 ? String(b) : `1/${Math.round(1 / b)}`)
+const LOOP_KEYS = { A: 'D', B: 'J' }
+
+/** Loops: AUTO LOOP (beats), ½X / 2X, LOOP IN / OUT, RELOOP / EXIT. */
+function LoopControls({ deck }: { deck: Deck }) {
+  const st = useDeck(deck)
+  const active = !!st.loop
+  const off = !deck.buffer
+  const save = (v: number | undefined) => v !== undefined && st.track && saveGrid(st.track.id, v)
+  return (
+    <div className={`loops ${active ? 'on' : ''}`} role="group" aria-label={`Deck ${deck.name} loops`}>
+      <button type="button" className="loop-auto" aria-pressed={active} disabled={off} onClick={() => deck.autoLoop()} aria-keyshortcuts={LOOP_KEYS[deck.name]} title={`Loop ${loopLabel(st.loopBeats)} beats from here (${LOOP_KEYS[deck.name]})`}>
+        LOOP {loopLabel(st.loopBeats)}<kbd>{LOOP_KEYS[deck.name]}</kbd>
+      </button>
+      <button type="button" disabled={off} onClick={() => deck.resizeLoop(0.5)} aria-label={`Halve deck ${deck.name} loop`}>½</button>
+      <button type="button" disabled={off} onClick={() => deck.resizeLoop(2)} aria-label={`Double deck ${deck.name} loop`}>×2</button>
+      <button type="button" disabled={off} className={deck.pendingLoopIn !== null ? 'armed' : ''} onClick={() => deck.setLoopIn()} title="Mark where a loop starts">IN</button>
+      <button type="button" disabled={off || deck.pendingLoopIn === null} onClick={() => deck.setLoopOut()} title="Close the loop here (rounded to whole beats)">OUT</button>
+      <button type="button" disabled={off} onClick={() => deck.reloop()} title={active ? 'Leave the loop' : 'Jump back into the last loop'}>{active ? 'EXIT' : 'RELOOP'}</button>
+      <span className="grid-ctl" role="group" aria-label="Beatgrid">
+        <span className="grid-label">GRID</span>
+        <button type="button" disabled={off || !deck.bpm} onClick={() => save(deck.nudgeGrid(-0.01))} aria-label={`Move deck ${deck.name} beatgrid 10 ms earlier`}>◀</button>
+        <button type="button" disabled={off || !deck.bpm} onClick={() => save(deck.nudgeGrid(0.01))} aria-label={`Move deck ${deck.name} beatgrid 10 ms later`}>▶</button>
+        <button type="button" disabled={off || !deck.bpm} onClick={() => save(deck.setGridHere())} title="Pause or play with the playhead on a kick, then press: beat 1 goes here">SET</button>
+      </span>
     </div>
   )
 }

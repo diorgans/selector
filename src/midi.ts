@@ -26,6 +26,12 @@ const deckSteps = (d: 'A' | 'B', side: string): Step[] => [
   { id: `${d}.low`, label: `${side} channel: LOW`, how: `Turn the LOW knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.filter`, label: `${side} channel: FILTER`, how: `Turn the FILTER knob on the ${side.toLowerCase()} channel.`, kind: 'knob' },
   { id: `${d}.fader`, label: `${side} channel: fader`, how: `Move the ${side.toLowerCase()} channel fader up and down.`, kind: 'knob' },
+  { id: `${d}.loopauto`, label: `${side} deck: AUTO LOOP`, how: `Press AUTO LOOP on the ${side.toLowerCase()} deck.`, kind: 'button' },
+  { id: `${d}.loophalf`, label: `${side} deck: LOOP ½X`, how: 'Press the 1/2X loop button.', kind: 'button' },
+  { id: `${d}.loopdouble`, label: `${side} deck: LOOP 2X`, how: 'Press the 2X loop button.', kind: 'button' },
+  { id: `${d}.loopin`, label: `${side} deck: LOOP IN`, how: 'Press LOOP IN.', kind: 'button' },
+  { id: `${d}.loopout`, label: `${side} deck: LOOP OUT`, how: 'Press LOOP OUT.', kind: 'button' },
+  { id: `${d}.reloop`, label: `${side} deck: RELOOP/EXIT`, how: 'Press RELOOP/EXIT.', kind: 'button' },
   ...[1, 2, 3].flatMap((n): Step[] => [
     { id: `${d}.fx${n}`, label: `${side} FX ${n}: on/off`, how: `Press FX button ${n} on the ${side.toLowerCase()} side.`, kind: 'button' },
     { id: `${d}.fx${n}lvl`, label: `${side} FX ${n}: level`, how: `Turn the FX ${n} knob above it.`, kind: 'knob' },
@@ -162,6 +168,12 @@ export function startController() {
       case 'fx1lvl': case 'fx2lvl': case 'fx3lvl': deck.channel.fx.slots[Number(ctl[2]) - 1].setAmount(v / 127); break
       case 'fxbeats': deck.channel.fx.stepBeats(relative(m.value, b.rel)); break
       case 'load': if (pressed) browse?.load(d); break
+      case 'loopauto': if (pressed) deck.autoLoop(); break
+      case 'loophalf': if (pressed) deck.resizeLoop(0.5); break
+      case 'loopdouble': if (pressed) deck.resizeLoop(2); break
+      case 'loopin': if (pressed) deck.setLoopIn(); break
+      case 'loopout': if (pressed) deck.setLoopOut(); break
+      case 'reloop': if (pressed) deck.reloop(); break
       case 'hot1': case 'hot2': case 'hot3': case 'hot4': if (pressed) deck.hotCue(Number(ctl.slice(3)) - 1); break
       case 'high': case 'mid': case 'low': deck.channel.setEq(ctl, v / 127); break
       case 'filter': deck.channel.setFilter((v / 127) * 2 - 1); break
