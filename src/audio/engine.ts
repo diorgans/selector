@@ -345,6 +345,21 @@ export class Deck {
     this.emit({ keyLock: on })
   }
 
+  /** Newer info for the loaded song (e.g. analysis just found its BPM and key). */
+  refreshTrack(t: Track) {
+    const cur = this.state.track
+    if (!cur || cur.id !== t.id) return
+    let changed = false
+    for (const k of ['bpm', 'key', 'firstBeatSec'] as const)
+      if ((cur[k] === null || cur[k] === undefined) && t[k] !== null && t[k] !== undefined) {
+        Object.assign(cur, { [k]: t[k] })
+        changed = true
+      }
+    if (!changed) return
+    if (cur.bpm) this.channel.fx.setBeatSec(60 / (cur.bpm * this.state.rate))
+    this.emit()
+  }
+
   /** Swap playback to separated stems (keeps position; seamless if playing). */
   async loadStems(id: string) {
     const token = this.loadToken

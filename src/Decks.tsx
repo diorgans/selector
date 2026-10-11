@@ -251,7 +251,7 @@ function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDr
         </div>
         <div className="deck-bpm">
           <span className="big">{deck.liveBpm ? deck.liveBpm.toFixed(1) : '–'}</span>
-          <small>{st.rate !== 1 ? `${Number(pct) > 0 ? '+' : ''}${pct}%` : 'BPM'}</small>
+          <small>{st.rate !== 1 ? `${Number(pct) > 0 ? '+' : ''}${pct}%` : t && !t.bpm ? 'analyzing…' : 'BPM'}</small>
         </div>
         <KeyChip k={t?.key ?? null} />
       </div>

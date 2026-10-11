@@ -170,6 +170,14 @@ export function App() {
   )
 
   const tracksById = useMemo(() => new Map((lib?.tracks ?? []).map((t) => [t.id, t])), [lib])
+  // Loaded decks pick up BPM / key / beatgrid as soon as analysis finds them.
+  useEffect(() => {
+    const m = getMixer()
+    for (const d of [m.decks.A, m.decks.B]) {
+      const t = d.state.track && tracksById.get(d.state.track.id)
+      if (t) d.refreshTrack(t)
+    }
+  }, [tracksById])
   const inSet = useMemo(() => new Set(set.trackIds), [set])
   // Automix reads the latest library, set and selection through refs, so it's created once.
   const live = useRef({ lib, set, selected })
