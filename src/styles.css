@@ -228,3 +228,28 @@ tbody tr, .crate, .tabs button, .seg button, .look button, .tbtn, .add, .reason 
 @media (prefers-reduced-motion: reduce) {
   *, ::view-transition-group(*) { animation: none !important; transition: none !important; }
 }
+
+/* --- Source switch + keyboard guide ----------------------------------------- */
+.source { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; margin: 0 4px 10px; border: 1px solid var(--panel-line); border-radius: 999px; }
+.source button { padding: 6px 4px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--muted); transition: background-color 200ms ease, color 200ms ease; }
+.source button[aria-selected="true"] { background: var(--accent); color: #0b0b14; }
+.side-note { margin: 12px 10px 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+kbd { display: inline-block; min-width: 1.5em; padding: 1px 5px; border: 1px solid var(--panel-line); border-bottom-width: 2px; border-radius: 5px; font: 700 10px var(--num); color: var(--muted); text-align: center; background: rgba(255, 255, 255, 0.04); }
+.tbtn { position: relative; }
+.tbtn kbd { position: absolute; right: 3px; bottom: 2px; min-width: 0; padding: 0 3px; border: 0; background: none; font-size: 9px; opacity: 0.7; }
+.tbtn.play.on kbd { color: #0b0b14; }
+.keys-btn kbd { margin-left: 2px; }
+.shortcuts { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 64px); color: var(--fg); padding: 0; background: var(--bg); }
+:root[data-look="glass"] .shortcuts { background: rgba(18, 16, 34, 0.94); }
+.shortcuts::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
+.shortcuts[open] { animation: vt-in-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.shortcuts-body { padding: 22px 24px; display: grid; gap: 16px; overflow: auto; }
+.shortcuts-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; }
+@media (max-width: 760px) { .shortcuts-cols { grid-template-columns: 1fr; } }
+.shortcuts h3 { margin: 12px 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); }
+.shortcuts dl { margin: 0; display: grid; gap: 8px; }
+.kbd-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.kbd-row dt kbd { font-size: 12px; color: var(--fg); padding: 2px 7px; }
+.kbd-row dd { margin: 0; color: var(--muted); }
+.or { color: var(--muted); }
+.how { margin: 0; padding-left: 1.2em; display: grid; gap: 10px; color: var(--muted); line-height: 1.5; }

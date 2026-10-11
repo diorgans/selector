@@ -190,8 +190,11 @@ function Knob({ label, value, onChange, min = 0, max = 1, center = 0.5, vertical
   )
 }
 
+const KEY_HINTS = { A: { play: 'Q', cue: 'A', sync: 'S' }, B: { play: 'P', cue: 'L', sync: 'K' } }
+
 function DeckPanel({ deck, other }: { deck: Deck; other: Deck }) {
   const st = useDeck(deck)
+  const keys = KEY_HINTS[deck.name]
   useFrame(st.playing)
   const t = st.track
   const pos = deck.position()
@@ -224,9 +227,9 @@ function DeckPanel({ deck, other }: { deck: Deck; other: Deck }) {
         <span>−{fmt(deck.duration - pos)}</span>
       </div>
       <div className="transport">
-        <button type="button" className="tbtn cue" onClick={() => deck.cue()} disabled={!deck.buffer}>CUE</button>
-        <button type="button" className={`tbtn play ${st.playing ? 'on' : ''}`} onClick={() => deck.toggle()} disabled={!deck.buffer} aria-pressed={st.playing}>{st.playing ? '❚❚' : '▶'}</button>
-        <button type="button" className={`tbtn sync ${st.synced ? 'on' : ''}`} onClick={() => deck.syncTo(other)} disabled={!deck.buffer || !other.buffer || !deck.bpm} aria-pressed={st.synced} title="Match the other deck's tempo and line up the beats">SYNC</button>
+        <button type="button" className="tbtn cue" onClick={() => deck.cue()} disabled={!deck.buffer} aria-keyshortcuts={keys.cue} aria-label={`Cue deck ${deck.name} (${keys.cue})`}>CUE<kbd>{keys.cue}</kbd></button>
+        <button type="button" className={`tbtn play ${st.playing ? 'on' : ''}`} onClick={() => deck.toggle()} disabled={!deck.buffer} aria-pressed={st.playing} aria-keyshortcuts={keys.play} aria-label={`${st.playing ? 'Pause' : 'Play'} deck ${deck.name} (${keys.play})`}>{st.playing ? '❚❚' : '▶'}<kbd>{keys.play}</kbd></button>
+        <button type="button" className={`tbtn sync ${st.synced ? 'on' : ''}`} onClick={() => deck.syncTo(other)} disabled={!deck.buffer || !other.buffer || !deck.bpm} aria-pressed={st.synced} title="Match the other deck's tempo and line up the beats" aria-keyshortcuts={keys.sync} aria-label={`Sync deck ${deck.name} (${keys.sync})`}>SYNC<kbd>{keys.sync}</kbd></button>
         <span className="nudge">
           <button type="button" aria-label="Nudge slower" {...hold(() => deck.nudge(-0.04))} disabled={!st.playing}>‹</button>
           <button type="button" aria-label="Nudge faster" {...hold(() => deck.nudge(0.04))} disabled={!st.playing}>›</button>

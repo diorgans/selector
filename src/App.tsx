@@ -6,6 +6,8 @@ import { CamelotWheel } from './CamelotWheel.tsx'
 import { getMixer } from './audio/engine.ts'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
+import { libraryGroups } from './libraryGroups.ts'
+import { Shortcuts } from './Shortcuts.tsx'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
 type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'durationSec' | 'playCount'
@@ -18,7 +20,26 @@ const keyOrder = (k: string | null) => (k ? Number(k.slice(0, -1)) * 2 + (k.ends
 export function App() {
   const [lib, setLib] = useState<Library>()
   const [error, setError] = useState<string>()
-  const [crate, setCrate] = useState<string>('all')
+  // Sidebar source: the music files Noah owns, or his Apple Music playlists. Remembered between visits.
+  const [source, setSourceState] = useState<'library' | 'apple'>(() => {
+    try {
+      return localStorage.getItem('selector-source') === 'apple' ? 'apple' : 'library'
+    } catch {
+      return 'library'
+    }
+  })
+  const [crate, setCrate] = useState<string>(() => (source === 'library' ? 'lib:all' : 'all'))
+  const setSource = (s: 'library' | 'apple') =>
+    withTransition(() => {
+      setSourceState(s)
+      setCrate(s === 'library' ? 'lib:all' : 'all')
+      try {
+        localStorage.setItem('selector-source', s)
+      } catch {
+        /* remembered for this visit only */
+      }
+    }, 'crate')
+  const [showKeys, setShowKeys] = useState(false)
   const [query, setQuery] = useState('')
   const [keyFilter, setKeyFilter] = useState<string | null>(null)
   const [sort, setSort] = useState<{ by: SortKey; dir: 1 | -1 }>({ by: 'bpm', dir: 1 })
@@ -45,8 +66,10 @@ export function App() {
 
   const inCrate = useMemo(() => {
     if (!lib) return []
-    if (crate === 'all') return lib.tracks
-    const ids = new Set(lib.crates.find((c) => c.id === crate)?.trackIds)
+    if (crate === 'all') return lib.tracks.filter((t) => !t.id.startsWith('f')) // the rekordbox collection
+    const ids = new Set(
+      crate.startsWith('lib:') ? libraryGroups(lib.tracks).find((g) => g.id === crate)?.trackIds : lib.crates.find((c) => c.id === crate)?.trackIds,
+    )
     return lib.tracks.filter((t) => ids.has(t.id))
   }, [lib, crate])
 
@@ -86,7 +109,15 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
-      if (el.closest('input, textarea, select') || e.metaKey || e.ctrlKey) return
+      if (e.key === '?') {
+        setShowKeys((v) => !v)
+        return e.preventDefault()
+      }
+      if (e.key === '/' && !el.closest('input, textarea, select')) {
+        document.querySelector<HTMLInputElement>('.top input[type=search]')?.focus()
+        return e.preventDefault()
+      }
+      if (showKeys || el.closest('input, textarea, select, dialog') || e.metaKey || e.ctrlKey) return
       const m = getMixer(), { A, B } = m.decks
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
@@ -125,16 +156,35 @@ export function App() {
     <div className="app">
       <aside className="side panel">
         <div className="brand">Selector</div>
-        <nav aria-label="Crates">
-          <button type="button" className={crate === 'all' ? 'crate on' : 'crate'} onClick={() => withTransition(() => setCrate('all'), 'crate')}>
-            <span>All tracks</span><span className="count">{lib.tracks.length}</span>
-          </button>
-          <div className="side-label">Apple Music playlists</div>
-          {crates.filter((c) => c.trackIds.length > 0).map((c) => (
-            <button key={c.id} type="button" className={crate === c.id ? 'crate on' : 'crate'} onClick={() => withTransition(() => setCrate(c.id), 'crate')} title={`${c.trackIds.length} of ${c.totalItems} songs are in rekordbox`}>
-              <span className="crate-name">{c.name}</span><span className="count">{c.trackIds.length}</span>
-            </button>
-          ))}
+        <div className="source" role="tablist" aria-label="Music source">
+          <button type="button" role="tab" aria-selected={source === 'library'} onClick={() => setSource('library')}>My Library</button>
+          <button type="button" role="tab" aria-selected={source === 'apple'} onClick={() => setSource('apple')}>Apple Music</button>
+        </div>
+        <nav aria-label={source === 'library' ? 'My music files' : 'Apple Music playlists'}>
+          {source === 'library' ? (
+            <>
+              {libraryGroups(lib.tracks).filter((g, i) => i < 2 || g.trackIds.length > 0).map((g) => (
+                <button key={g.id} type="button" className={crate === g.id ? 'crate on' : 'crate'} title={g.hint} onClick={() => withTransition(() => setCrate(g.id), 'crate')}>
+                  <span className="crate-name">{g.name}</span><span className="count">{g.trackIds.length}</span>
+                </button>
+              ))}
+              {lib.stats.playable < 10 && (
+                <p className="side-note">Add music: download songs in the Music app (select › right-click › Download) or plug in your drive. New files appear within 30 seconds.</p>
+              )}
+            </>
+          ) : (
+            <>
+              <button type="button" className={crate === 'all' ? 'crate on' : 'crate'} title="Everything in your rekordbox collection, including Apple Music streaming" onClick={() => withTransition(() => setCrate('all'), 'crate')}>
+                <span className="crate-name">All rekordbox tracks</span><span className="count">{lib.tracks.filter((t) => !t.id.startsWith('f')).length}</span>
+              </button>
+              <div className="side-label">Playlists</div>
+              {crates.filter((c) => c.trackIds.length > 0).map((c) => (
+                <button key={c.id} type="button" className={crate === c.id ? 'crate on' : 'crate'} onClick={() => withTransition(() => setCrate(c.id), 'crate')} title={`${c.trackIds.length} of ${c.totalItems} songs are in rekordbox`}>
+                  <span className="crate-name">{c.name}</span><span className="count">{c.trackIds.length}</span>
+                </button>
+              ))}
+            </>
+          )}
         </nav>
       </aside>
 
@@ -147,6 +197,7 @@ export function App() {
           )}
           {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
           {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
+          <button type="button" className="pill keys-btn" onClick={() => setShowKeys(true)} aria-haspopup="dialog">⌨ Keys <kbd>?</kbd></button>
           <div className="look" role="group" aria-label="Design direction">
             {(['glass', 'console'] as Look[]).map((l) => (
               <button key={l} type="button" aria-pressed={look === l} onClick={() => withTransition(() => setLook(l), 'look')}>{l === 'glass' ? 'A · Glass' : 'B · Console'}</button>
@@ -233,6 +284,7 @@ export function App() {
           )}
         </div>
       </aside>
+      <Shortcuts open={showKeys} onClose={() => setShowKeys(false)} />
     </div>
   )
 }
