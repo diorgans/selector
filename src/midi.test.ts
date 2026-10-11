@@ -41,7 +41,8 @@ describe('DDJ-SR preset', () => {
     expect(p['A.load']).toEqual({ kind: 'note', channel: 6, number: 0x46 })
   })
   it('covers every control the setup knows, with no two controls on one message', () => {
-    expect(STEPS.filter((s) => !p[s.id]).map((s) => s.id)).toEqual([])
+    // 'master' is learn-only: some controllers handle master volume in hardware.
+    expect(STEPS.filter((s) => !p[s.id]).map((s) => s.id)).toEqual(['master'])
     const keys = Object.values(p).map((b) => `${b.kind}${b.channel}:${b.number}`)
     expect(new Set(keys).size).toBe(keys.length)
   })

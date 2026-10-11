@@ -46,6 +46,7 @@ export const STEPS: Step[] = [
   ...deckSteps('A', 'Left'),
   ...deckSteps('B', 'Right'),
   { id: 'xfader', label: 'Crossfader', how: 'Move the crossfader from side to side.', kind: 'knob' },
+  { id: 'master', label: 'Master volume', how: 'Turn the MASTER level knob down and back up. (If nothing happens, your controller handles master volume in hardware; press Skip.)', kind: 'knob' },
   { id: 'browse', label: 'Browse knob', how: 'Turn the browse knob in the middle a few clicks to the right.', kind: 'encoder' },
   { id: 'A.load', label: 'LOAD left', how: 'Press the LOAD button for the left deck.', kind: 'button' },
   { id: 'B.load', label: 'LOAD right', how: 'Press the LOAD button for the right deck.', kind: 'button' },
@@ -223,6 +224,7 @@ export function startController() {
     const v = b.invert ? 127 - m.value : m.value
     if (!d) {
       if (ctl === 'xfader') mixer.setCrossfader(v / 127)
+      if (ctl === 'master') mixer.setMasterVolume(v / 127)
       if (ctl === 'browse') {
         const clicks = browseClicks(relative(m.value, b.rel)) // one song per physical click; fast spins move further
         if (clicks) browse?.move(clicks)
