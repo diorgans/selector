@@ -13,7 +13,8 @@
     "music-metadata": "^12.1.0",
     "plist": "^5.0.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "shaders": "^4.0.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

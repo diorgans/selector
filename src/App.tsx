@@ -7,6 +7,7 @@ import { getMixer } from './audio/engine.ts'
 import { getAutomix } from './audio/automix.ts'
 import { getTracker } from './audio/sessionTracker.ts'
 import { Recap } from './Recap.tsx'
+import { openVisuals, startVisualsLink } from './visualsLink.ts'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
@@ -121,6 +122,7 @@ export function App() {
   )
 
   const [tracker] = useState(() => getTracker(getMixer(), automix))
+  useEffect(() => startVisualsLink(getMixer()), [])
   const [showRecap, setShowRecap] = useState(false)
 
   const loadTo = (deck: 'A' | 'B', t: Track) => {
@@ -221,6 +223,7 @@ export function App() {
           )}
           {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
           {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
+          <button type="button" className="pill" onClick={openVisuals} title="Open the visuals in a new window (drag it to a second screen; press F there for full screen)">Visuals ↗</button>
           <button type="button" className="pill" onClick={() => setShowRecap(true)} aria-haspopup="dialog">Recap</button>
           <button type="button" className="pill keys-btn" onClick={() => setShowKeys(true)} aria-haspopup="dialog">⌨ Keys <kbd>?</kbd></button>
           <div className="look" role="group" aria-label="Design direction">

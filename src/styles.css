@@ -361,3 +361,20 @@ tbody tr[draggable="true"] { cursor: grab; }
 .keylock[aria-pressed="true"] { background: var(--mix); color: #0b0b14; border-color: var(--mix); }
 .tempo-row { grid-template-columns: minmax(0, 1fr) auto auto; }
 .tempo-row .knob.tempo { grid-column: 1 / -1; }
+
+/* --- Visuals window ------------------------------------------------------------ */
+:root[data-page="visuals"] body { background: #000; }
+.visuals { position: fixed; inset: 0; background: #000; cursor: none; }
+.visuals:hover { cursor: default; }
+.visuals-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.visuals-title { position: absolute; left: 5vw; bottom: 7vh; color: #fff; text-shadow: 0 2px 30px rgba(0, 0, 0, 0.6); opacity: 0; transform: translateY(16px); transition: opacity 0.8s ease, transform 0.8s ease; pointer-events: none; }
+.visuals-title.show { opacity: 1; transform: none; }
+.vt-title { font: 800 clamp(28px, 5vw, 72px)/1.05 var(--font); letter-spacing: -0.02em; }
+.vt-artist { font: 600 clamp(16px, 2vw, 28px) var(--font); opacity: 0.8; margin-top: 6px; }
+.visuals-idle { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.55); font: 600 16px var(--font); letter-spacing: 0.2em; text-transform: uppercase; pointer-events: none; }
+.visuals-hud { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(10px); opacity: 0; transition: opacity 0.3s ease; }
+.visuals-hud.show { opacity: 1; }
+.visuals-hud button { padding: 6px 12px; border-radius: 999px; color: #fff; font: 700 12px var(--font); }
+.visuals-hud button[aria-pressed="true"] { background: #fff; color: #000; }
+.visuals-hud .hint { color: rgba(255, 255, 255, 0.6); font-size: 11px; padding: 0 8px; }
+@media (prefers-reduced-motion: reduce) { .visuals-title { transition: none; } }
