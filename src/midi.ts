@@ -16,6 +16,7 @@ const deckSteps = (d: 'A' | 'B', side: string): Step[] => [
   { id: `${d}.cue`, label: `${side} deck: CUE`, how: `Press CUE on the ${side.toLowerCase()} deck.`, kind: 'button' },
   { id: `${d}.sync`, label: `${side} deck: SYNC`, how: `Press SYNC on the ${side.toLowerCase()} deck.`, kind: 'button' },
   { id: `${d}.jog`, label: `${side} deck: jog wheel`, how: `Turn the ${side.toLowerCase()} jog wheel by its outer edge.`, kind: 'jog' },
+  { id: `${d}.keylock`, label: `${side} deck: KEY LOCK`, how: `Press KEY LOCK on the ${side.toLowerCase()} deck (near its tempo fader).`, kind: 'button' },
   { id: `${d}.tempo`, label: `${side} deck: tempo fader`, how: `Slide the ${side.toLowerCase()} tempo fader all the way to the + end and back to the middle.`, kind: 'fader-end' },
   { id: `${d}.hot1`, label: `${side} deck: pad 1`, how: `Set the ${side.toLowerCase()} pads to HOT CUE and press pad 1.`, kind: 'button' },
   { id: `${d}.hot2`, label: `${side} deck: pad 2`, how: 'Press pad 2.', kind: 'button' },
@@ -168,6 +169,7 @@ export function startController() {
       case 'fx1lvl': case 'fx2lvl': case 'fx3lvl': deck.channel.fx.slots[Number(ctl[2]) - 1].setAmount(v / 127); break
       case 'fxbeats': deck.channel.fx.stepBeats(relative(m.value, b.rel)); break
       case 'load': if (pressed) browse?.load(d); break
+      case 'keylock': if (pressed) void deck.setKeyLock(!deck.state.keyLock); break
       case 'loopauto': if (pressed) deck.autoLoop(); break
       case 'loophalf': if (pressed) deck.resizeLoop(0.5); break
       case 'loopdouble': if (pressed) deck.resizeLoop(2); break
@@ -193,5 +195,9 @@ export function startController() {
     }
   })
   // PLAY lights follow the decks.
-  for (const d of ['A', 'B'] as const) mixer.decks[d].subscribe(() => light(loadMap()[`${d}.play`], mixer.decks[d].state.playing))
+  for (const d of ['A', 'B'] as const)
+    mixer.decks[d].subscribe(() => {
+      light(loadMap()[`${d}.play`], mixer.decks[d].state.playing)
+      light(loadMap()[`${d}.keylock`], mixer.decks[d].state.keyLock)
+    })
 }
