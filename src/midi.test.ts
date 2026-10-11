@@ -16,3 +16,15 @@ describe('MIDI parsing', () => {
     expect(same(b, { kind: 'cc', channel: 0, number: 11, value: 64 })).toBe(false)
   })
 })
+
+import { detectRel, relative } from './midi.ts'
+describe('relative knobs (jog wheels, browse)', () => {
+  it('reads both encodings and detects which one a controller uses', () => {
+    expect(relative(65, 'center')).toBe(1)
+    expect(relative(62, 'center')).toBe(-2)
+    expect(relative(1, 'twos')).toBe(1)
+    expect(relative(127, 'twos')).toBe(-1)
+    expect(detectRel([65, 66, 65, 64])).toBe('center')
+    expect(detectRel([1, 1, 2, 127])).toBe('twos')
+  })
+})

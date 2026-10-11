@@ -4,11 +4,12 @@
 
 import { getMixer, type Deck } from './audio/engine.ts'
 
-export type Binding = { kind: 'note' | 'cc'; channel: number; number: number; invert?: boolean }
+// rel: how a relative knob (jog, browse) encodes direction: 'center' = 64 ± n, 'twos' = 1..63 forward / 65..127 back.
+export type Binding = { kind: 'note' | 'cc'; channel: number; number: number; invert?: boolean; rel?: 'center' | 'twos' }
 export type ActionId = string
 export type MidiMap = Record<ActionId, Binding>
 
-export type Step = { id: ActionId; label: string; how: string; kind: 'button' | 'knob' | 'jog' | 'fader-end' }
+export type Step = { id: ActionId; label: string; how: string; kind: 'button' | 'knob' | 'jog' | 'fader-end' | 'encoder' }
 
 const deckSteps = (d: 'A' | 'B', side: string): Step[] => [
   { id: `${d}.play`, label: `${side} deck: PLAY`, how: `Press PLAY/PAUSE on the ${side.toLowerCase()} deck.`, kind: 'button' },
@@ -32,7 +33,28 @@ export const STEPS: Step[] = [
   ...deckSteps('A', 'Left'),
   ...deckSteps('B', 'Right'),
   { id: 'xfader', label: 'Crossfader', how: 'Move the crossfader from side to side.', kind: 'knob' },
+  { id: 'browse', label: 'Browse knob', how: 'Turn the browse knob in the middle a few clicks to the right.', kind: 'encoder' },
+  { id: 'A.load', label: 'LOAD left', how: 'Press the LOAD button for the left deck.', kind: 'button' },
+  { id: 'B.load', label: 'LOAD right', how: 'Press the LOAD button for the right deck.', kind: 'button' },
 ]
+
+/** Signed step from a relative knob message (jog wheels, browse knob). */
+export function relative(value: number, rel: Binding['rel'] = 'center') {
+  if (rel === 'twos') return value < 64 ? value : value - 128
+  return value - 64
+}
+
+/** Guess a relative knob's encoding from the values it sent while being turned. */
+export function detectRel(values: number[]): 'center' | 'twos' {
+  return values.some((v) => v >= 56 && v <= 72) ? 'center' : 'twos'
+}
+
+// The library hooks the browse knob and LOAD buttons into the track list.
+type Browse = { move: (steps: number) => void; load: (deck: 'A' | 'B') => void }
+let browse: Browse | undefined
+export function setBrowseHandlers(b: Browse) {
+  browse = b
+}
 
 const KEY = 'selector-midi-map'
 export function loadMap(): MidiMap {
@@ -118,6 +140,7 @@ export function startController() {
     const v = b.invert ? 127 - m.value : m.value
     if (!d) {
       if (ctl === 'xfader') mixer.setCrossfader(v / 127)
+      if (ctl === 'browse') browse?.move(Math.sign(relative(m.value, b.rel)))
       return
     }
     const deck: Deck = mixer.decks[d]
@@ -128,6 +151,7 @@ export function startController() {
       case 'cue': if (pressed) deck.cue(); break
       case 'sync': if (pressed) deck.syncTo(other); break
       case 'fx': if (pressed) deck.channel.fx.setOn(!deck.channel.fx.on); break
+      case 'load': if (pressed) browse?.load(d); break
       case 'hot1': case 'hot2': case 'hot3': case 'hot4': if (pressed) deck.hotCue(Number(ctl.slice(3)) - 1); break
       case 'high': case 'mid': case 'low': deck.channel.setEq(ctl, v / 127); break
       case 'filter': deck.channel.setFilter((v / 127) * 2 - 1); break
@@ -135,7 +159,7 @@ export function startController() {
       case 'tempo': deck.setRate(1 + ((v / 127) * 2 - 1) * 0.08); break
       case 'jog': {
         // Relative encoder: 64 = still, above = forward, below = back.
-        const delta = m.value - 64
+        const delta = relative(m.value, b.rel)
         if (deck.state.playing) {
           // Bend the tempo briefly, like pushing a record.
           const release = deck.nudge(Math.max(-0.08, Math.min(0.08, delta * 0.01)))

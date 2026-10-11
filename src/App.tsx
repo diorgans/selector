@@ -16,7 +16,7 @@ import { libraryGroups } from './libraryGroups.ts'
 import { Shortcuts } from './Shortcuts.tsx'
 import { LibraryTools } from './LibraryTools.tsx'
 import { ControllerSetup } from './ControllerSetup.tsx'
-import { connect as connectMidi, loadMap as loadMidiMap, startController } from './midi.ts'
+import { connect as connectMidi, loadMap as loadMidiMap, setBrowseHandlers, startController } from './midi.ts'
 import { trackDrag } from './dnd.ts'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
@@ -192,6 +192,26 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
+  // The controller's browse knob moves the selection; LOAD sends it to a deck.
+  const browseState = useRef({ visible: [] as Track[], selected: undefined as Track | undefined })
+  browseState.current = { visible, selected }
+  useEffect(() => {
+    setBrowseHandlers({
+      move: (steps) => {
+        const { visible, selected } = browseState.current
+        if (!visible.length) return
+        const i = selected ? visible.findIndex((t) => t.id === selected.id) : -1
+        const next = visible[Math.max(0, Math.min(visible.length - 1, i + steps))]
+        setSelected(next)
+        requestAnimationFrame(() => document.querySelector('tbody tr.sel')?.scrollIntoView({ block: 'nearest' }))
+      },
+      load: (deck) => {
+        const t = browseState.current.selected
+        if (t?.playable) void getMixer().decks[deck].load(t)
+      },
+    })
+  }, [])
 
   const addToSet = (t: Track) => {
     setSet((s) => ({ ...s, trackIds: [...s.trackIds, t.id] }))

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { connect, deviceName, loadMap, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
+import { connect, detectRel, deviceName, loadMap, onMessage, same, saveMap, startController, STEPS, type Binding, type Msg } from './midi.ts'
 
 /** The controller window: connect, learn each control, then use it. */
 export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -60,10 +60,11 @@ export function ControllerSetup({ open, onClose }: { open: boolean; onClose: () 
       clearTimeout(timer)
       timer = window.setTimeout(() => {
         const best = [...counts.values()].sort((a, b) => b.n - a.n)[0]
-        if (!best || best.n < 3) return
+        if (!best || best.n < (s.kind === 'encoder' ? 2 : 3)) return
         // Tempo: the + end was reached first, so if it read low, the fader is upside down.
         const invert = s.kind === 'fader-end' ? best.values.slice(0, Math.ceil(best.values.length / 2)).reduce((a, v) => a + v, 0) / Math.ceil(best.values.length / 2) < 64 : undefined
-        done({ kind: 'cc', channel: best.m.channel, number: best.m.number, ...(invert ? { invert } : {}) })
+        const rel = s.kind === 'jog' || s.kind === 'encoder' ? detectRel(best.values) : undefined
+        done({ kind: 'cc', channel: best.m.channel, number: best.m.number, ...(invert ? { invert } : {}), ...(rel ? { rel } : {}) })
       }, 900)
     })
   }, [step, map])
