@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { audio, getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
 import type { Automix, AutomixSettings } from './audio/automix.ts'
+import { RECIPES } from './audio/recipes.ts'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
@@ -442,15 +443,20 @@ function AutomixPanel({ automix }: { automix: Automix }) {
             <option value="lift">Lift</option><option value="hold">Hold</option><option value="cool">Cool</option>
           </select></label>
         )}
-        <label>Style<select value={s.style} onChange={(e) => set('style', e.target.value as AutomixSettings['style'])}>
-          <option value="blend">Blend + bass swap</option><option value="filter">Filter out</option><option value="cut">Cut on the bar</option>
+        <label>Style<select value={s.style} onChange={(e) => set('style', e.target.value as AutomixSettings['style'])} title={s.style === 'surprise' ? 'A different transition each time, suited to the energy' : RECIPES[s.style].blurb}>
+          <option value="surprise">✦ Surprise me</option>
+          {Object.values(RECIPES).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select></label>
-        {s.style !== 'cut' && (
+        {s.style !== 'cut' && s.style !== 'echo' && (
           <label>Length<select value={s.bars} onChange={(e) => set('bars', Number(e.target.value) as AutomixSettings['bars'])}>
             <option value={8}>8 bars</option><option value={16}>16 bars</option><option value={32}>32 bars</option>
           </select></label>
         )}
       </div>
+      <label className="automix-stems">
+        <input type="checkbox" checked={s.useStems} onChange={(e) => set('useStems', e.target.checked)} />
+        Use stems (splits upcoming songs in the background for mashups)
+      </label>
       <p className="automix-status" role="status">
         {status}
         {on && next && mixAt && !blending ? <> · in <b>{Math.floor(secs / 60)}:{String(Math.floor(secs % 60)).padStart(2, '0')}</b></> : null}

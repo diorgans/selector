@@ -335,3 +335,5 @@ tbody tr[draggable="true"] { cursor: grab; }
 .app { height: auto; min-height: 100%; align-items: start; }
 .main { grid-template-rows: auto auto minmax(300px, calc(100vh - 28px - 14px * 2 - var(--decks-h, 470px) - 60px)); }
 .side, .detail { position: sticky; top: 14px; height: calc(100vh - 28px); }
+.automix-stems { display: flex; gap: 6px; align-items: flex-start; font-size: 10px; color: var(--muted); line-height: 1.3; }
+.automix-stems input { accent-color: var(--mix); margin: 1px 0 0; }

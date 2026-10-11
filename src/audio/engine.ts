@@ -61,6 +61,11 @@ class Channel {
   private readonly lp: BiquadFilterNode
   readonly fader: GainNode
   readonly xfade: GainNode
+  /** Dry level after the filter: automix cuts it to let an echo tail ring out on its own. */
+  private readonly dry: GainNode
+  /** Beat-synced echo: a send into a feedback delay that goes straight to the master. */
+  private readonly echoSend: GainNode
+  private readonly echoDelay: DelayNode
   constructor(master: Master) {
     const c = audio()
     this.input = c.createGain()
@@ -71,7 +76,46 @@ class Channel {
     this.lp = new BiquadFilterNode(c, { type: 'lowpass', frequency: 22000, Q: 0.9 })
     this.fader = c.createGain()
     this.xfade = c.createGain()
-    this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fader).connect(this.xfade).connect(master.input)
+    this.dry = c.createGain()
+    this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.dry).connect(this.fader).connect(this.xfade).connect(master.input)
+    this.echoSend = new GainNode(c, { gain: 0 })
+    this.echoDelay = new DelayNode(c, { maxDelayTime: 2, delayTime: 0.36 })
+    const feedback = new GainNode(c, { gain: 0.55 })
+    const tone = new BiquadFilterNode(c, { type: 'highpass', frequency: 300 }) // echoes thin out instead of muddying the bass
+    this.lp.connect(this.echoSend).connect(this.echoDelay).connect(tone).connect(feedback).connect(this.echoDelay)
+    tone.connect(master.input)
+  }
+
+  /** Echo every `seconds` (automix sets this to a beat or a dotted half-beat). */
+  setEchoTime(seconds: number) {
+    this.echoDelay.delayTime.setValueAtTime(Math.min(1.9, seconds), audio().currentTime)
+  }
+
+  /**
+   * Move one control from `from` to `to` over [start, start + dur] on the audio clock.
+   * EQ and filter use knob units (EQ 0..1 with 0.5 flat; filter -1..1); dry and echo are 0..1.
+   */
+  automate(param: 'low' | 'mid' | 'high' | 'filter' | 'dry' | 'echo', from: number, to: number, start: number, dur: number) {
+    const end = start + Math.max(0.005, dur)
+    const ramp = (p: AudioParam, a: number, b: number, exp = false) => {
+      p.setValueAtTime(a, start)
+      if (exp) p.exponentialRampToValueAtTime(b, end)
+      else p.linearRampToValueAtTime(b, end)
+    }
+    if (param === 'low' || param === 'mid' || param === 'high') ramp(this[param].gain, eqKnobToDb(from), eqKnobToDb(to))
+    else if (param === 'filter') {
+      const lpOf = (v: number) => (v < -0.02 ? 22000 * Math.pow(200 / 22000, -v) : 22000)
+      const hpOf = (v: number) => (v > 0.02 ? 10 * Math.pow(4000 / 10, v) : 10)
+      ramp(this.lp.frequency, lpOf(from), lpOf(to), true)
+      ramp(this.hp.frequency, hpOf(from), hpOf(to), true)
+    } else if (param === 'dry') ramp(this.dry.gain, from, to)
+    else ramp(this.echoSend.gain, from * 0.8, to * 0.8)
+    // Let the on-screen knobs follow along.
+    if (param === 'low' || param === 'mid' || param === 'high' || param === 'filter') {
+      const steps = Math.max(1, Math.min(16, Math.round(dur * 4)))
+      for (let i = 0; i <= steps; i++)
+        window.setTimeout(() => this.changed({ [param]: from + ((to - from) * i) / steps }), Math.max(0, (start - audio().currentTime + (dur * i) / steps) * 1000))
+    }
   }
   setEq(band: 'low' | 'mid' | 'high', knob: number) {
     this[band].gain.cancelScheduledValues(audio().currentTime)
@@ -101,6 +145,9 @@ class Channel {
     }
     this.hp.frequency.cancelScheduledValues(t)
     this.lp.frequency.cancelScheduledValues(t)
+    for (const p of [this.dry.gain, this.echoSend.gain]) p.cancelScheduledValues(t)
+    this.dry.gain.setTargetAtTime(1, t, 0.01)
+    this.echoSend.gain.setTargetAtTime(0, t, 0.01)
     this.setFilter(0)
     this.setFader(1)
     this.changed({ ...FLAT })
@@ -183,6 +230,20 @@ export class Deck {
       this.startSources(pos, pending)
     }
     this.emit({ stemsLoaded: true })
+  }
+
+  get hasStems() {
+    return this.state.stemsLoaded
+  }
+
+  /** Ramp a stem group on the audio clock (automix stem mashups). */
+  automateStem(group: StemGroup, from: number, to: number, start: number, dur: number) {
+    for (const part of STEM_GROUPS[group]) {
+      const g = this.stemGains.get(part)!.gain
+      g.setValueAtTime(from * from, start)
+      g.linearRampToValueAtTime(to * to, start + Math.max(0.005, dur))
+    }
+    window.setTimeout(() => this.emit({ stemLevels: { ...this.state.stemLevels, [group]: to } }), Math.max(0, (start + dur - audio().currentTime) * 1000))
   }
 
   /** Vocals / instruments / drums level, 0–1 (0 mutes that part). */
@@ -420,9 +481,49 @@ export class Mixer {
   crossfaderNow() {
     const r = this.xfadeRamp
     if (!r) return this.crossfader
+    const path = this.xfadePath
+    if (path) {
+      const t = audio().currentTime
+      const i = path.findIndex((p) => p.t >= t)
+      if (i === -1) return path.at(-1)!.x
+      if (i === 0) return path[0].x
+      const a = path[i - 1], b = path[i]
+      return a.x + ((b.x - a.x) * (t - a.t)) / (b.t - a.t || 1)
+    }
     const k = Math.max(0, Math.min(1, (audio().currentTime - r.start) / r.duration))
     return r.from + (r.to - r.from) * k
   }
+  /** Crossfader along a path of (time, position) points, equal-power throughout. */
+  scheduleCrossfadePath(points: { t: number; x: number }[]) {
+    const pts = [...points].sort((a, b) => a.t - b.t)
+    const start = pts[0].t, end = pts.at(-1)!.t
+    const n = 256
+    const at = (t: number) => {
+      const i = pts.findIndex((p) => p.t >= t)
+      if (i <= 0) return pts[Math.max(0, i)].x
+      const a = pts[i - 1], b = pts[i]
+      return a.x + ((b.x - a.x) * (t - a.t)) / (b.t - a.t || 1)
+    }
+    const xs = Array.from({ length: n }, (_, i) => at(start + ((end - start) * i) / (n - 1)))
+    for (const [deck, f] of [[this.decks.A, Math.cos], [this.decks.B, Math.sin]] as const) {
+      const g = deck.channel.xfade.gain
+      g.cancelScheduledValues(audio().currentTime)
+      g.setValueAtTime(f((xs[0] * Math.PI) / 2), audio().currentTime)
+      g.setValueCurveAtTime(Float32Array.from(xs, (x) => f((x * Math.PI) / 2)), start, Math.max(0.01, end - start))
+    }
+    this.xfadePath = pts
+    this.xfadeRamp = { from: xs[0], to: xs[n - 1], start, duration: end - start }
+    this.listeners.forEach((fn) => fn())
+    window.setTimeout(() => {
+      if (this.xfadeRamp?.start !== start) return
+      this.crossfader = xs[n - 1]
+      this.xfadeRamp = undefined
+      this.xfadePath = undefined
+      this.listeners.forEach((fn) => fn())
+    }, Math.max(0, (end - audio().currentTime) * 1000) + 30)
+  }
+  private xfadePath?: { t: number; x: number }[]
+
   /** Move the crossfader from its current spot to `to`, starting at an exact time (equal-power all the way). */
   scheduleCrossfade(to: number, start: number, duration: number) {
     const from = this.crossfaderNow()
@@ -439,6 +540,7 @@ export class Mixer {
       g.setValueAtTime(curve[0], audio().currentTime)
       g.setValueCurveAtTime(curve, start, duration)
     }
+    this.xfadePath = undefined
     this.xfadeRamp = { from, to, start, duration }
     this.listeners.forEach((fn) => fn())
     window.setTimeout(() => {
@@ -455,6 +557,7 @@ export class Mixer {
   setCrossfader(x: number) {
     this.crossfader = Math.max(0, Math.min(1, x))
     this.xfadeRamp = undefined
+    this.xfadePath = undefined
     const t = audio().currentTime
     for (const d of [this.decks.A, this.decks.B]) d.channel.xfade.gain.cancelScheduledValues(t)
     this.listeners?.forEach((fn) => fn())

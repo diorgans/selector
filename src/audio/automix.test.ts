@@ -6,32 +6,32 @@ const out = (o: Partial<Parameters<typeof planTransition>[0]> = {}) => ({ bpm: 1
 
 describe('planTransition', () => {
   it('starts on a phrase (multiple of 32 beats) and finishes before the track ends', () => {
-    const p = planTransition(out(), { bpm: 126, firstBeat: 0.2 }, 16, 'blend')
+    const p = planTransition(out(), { bpm: 126, firstBeat: 0.2 }, 64)
     const beat = 60 / 124
     const startBeat = (p.outStart - 0.5) / beat
     expect(startBeat % 32).toBeCloseTo(0, 6)
     expect(p.outStart + p.duration * 1).toBeLessThan(300 - 4 * beat)
-    expect(p.duration).toBeCloseTo(64 * beat, 6) // 16 bars
+    expect(p.duration).toBeCloseTo(64 * beat, 6) // 16 bars = 64 beats
     expect(p.inStart).toBe(0.2)
   })
   it('matches tempo, allowing half/double time', () => {
-    expect(planTransition(out(), { bpm: 126, firstBeat: 0 }, 16, 'blend').inRate).toBeCloseTo(124 / 126, 6)
-    expect(planTransition(out({ rate: 1.02 }), { bpm: 124, firstBeat: 0 }, 16, 'blend').inRate).toBeCloseTo(1.02, 6)
-    expect(planTransition(out(), { bpm: 62, firstBeat: 0 }, 16, 'blend').inRate).toBeCloseTo(1, 6)
-    const far = planTransition(out(), { bpm: 90, firstBeat: 0 }, 16, 'blend')
+    expect(planTransition(out(), { bpm: 126, firstBeat: 0 }, 64).inRate).toBeCloseTo(124 / 126, 6)
+    expect(planTransition(out({ rate: 1.02 }), { bpm: 124, firstBeat: 0 }, 64).inRate).toBeCloseTo(1.02, 6)
+    expect(planTransition(out(), { bpm: 62, firstBeat: 0 }, 64).inRate).toBeCloseTo(1, 6)
+    const far = planTransition(out(), { bpm: 90, firstBeat: 0 }, 64)
     expect(far.synced).toBe(false)
     expect(far.inRate).toBe(1)
   })
   it('uses the next bar when the phrase has already passed', () => {
-    const p = planTransition(out({ duration: 60, position: 50 }), { bpm: 124, firstBeat: 0 }, 16, 'blend')
+    const p = planTransition(out({ duration: 60, position: 50 }), { bpm: 124, firstBeat: 0 }, 64)
     const beat = 60 / 124
     const startBeat = (p.outStart - 0.5) / beat
     expect(startBeat % 4).toBeCloseTo(0, 6)
     expect(p.outStart).toBeGreaterThan(50)
   })
-  it('falls back to a timed fade without a beatgrid, and cuts are instant', () => {
-    expect(planTransition(out({ bpm: null }), { bpm: null, firstBeat: 0 }, 16, 'blend')).toMatchObject({ synced: false, duration: 8 })
-    expect(planTransition(out(), { bpm: 124, firstBeat: 0 }, 16, 'cut').duration).toBeLessThan(0.1)
+  it('falls back to a timed fade without a beatgrid; window length follows the beats asked for', () => {
+    expect(planTransition(out({ bpm: null }), { bpm: null, firstBeat: 0 }, 64)).toMatchObject({ synced: false, duration: 8 })
+    expect(planTransition(out(), { bpm: 124, firstBeat: 0 }, 4).duration).toBeCloseTo((4 * 60) / 124, 6)
   })
 })
 
@@ -43,7 +43,7 @@ const t = (id: string, key: string, bpm: number, extra: Partial<Track> = {}): Tr
 describe('pickNext', () => {
   const now = t('now', '8A', 124)
   const pool = [now, t('a', '9A', 126), t('b', '8A', 124), t('locked', '8A', 124, { playable: false }), t('c', '3B', 124)]
-  const smart: AutomixSettings = { source: 'smart', direction: 'lift', style: 'blend', bars: 16 }
+  const smart: AutomixSettings = { source: 'smart', direction: 'lift', style: 'blend', bars: 16, useStems: false }
   it('smart: best mixable suggestion, never played or unplayable tracks', () => {
     expect(pickNext(now, pool, new Set(), smart, [])?.id).toBe('a')
     expect(pickNext(now, pool, new Set(['a']), smart, [])?.id).toBe('b')
