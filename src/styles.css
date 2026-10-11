@@ -265,3 +265,11 @@ kbd { display: inline-block; min-width: 1.5em; padding: 1px 5px; border: 1px sol
 .stem-progress { display: grid; gap: 4px; width: 100%; font-size: 12px; color: var(--muted); }
 .stem-progress .bar { height: 4px; border-radius: 2px; background: var(--panel-line); overflow: hidden; }
 .stem-progress .bar span { display: block; height: 100%; background: var(--mix); transition: width 0.5s ease; }
+
+/* --- Drag a track onto a deck ------------------------------------------------- */
+tbody tr[draggable="true"] { cursor: grab; }
+.sug[draggable="true"] { cursor: grab; }
+.deck { position: relative; border-radius: calc(var(--radius) * 0.6); transition: box-shadow 160ms ease, background-color 160ms ease; }
+:root[data-dragging="track"] .deck { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.deck.drop-over { box-shadow: 0 0 0 2px var(--accent), 0 0 30px -6px var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.deck.drop-over::after { content: attr(data-drop-label); position: absolute; inset: 0; display: grid; place-items: center; font: 800 15px var(--font); color: var(--fg); background: color-mix(in srgb, var(--bg) 55%, transparent); border-radius: inherit; pointer-events: none; }

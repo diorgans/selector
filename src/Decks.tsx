@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
+import { isTrackDrag, TRACK_MIME } from './dnd.ts'
+import type { Track } from '../shared/types.ts'
 import { KeyChip } from './Sidebar.tsx'
 
 const HOT_CUES = 'ABCDEFGH'
@@ -193,7 +195,8 @@ function Knob({ label, value, onChange, min = 0, max = 1, center = 0.5, vertical
 
 const KEY_HINTS = { A: { play: 'Q', cue: 'A', sync: 'S' }, B: { play: 'P', cue: 'L', sync: 'K' } }
 
-function DeckPanel({ deck, other }: { deck: Deck; other: Deck }) {
+function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDropTrack: (id: string) => void }) {
+  const [over, setOver] = useState(false)
   const st = useDeck(deck)
   const keys = KEY_HINTS[deck.name]
   useFrame(st.playing)
@@ -209,7 +212,25 @@ function DeckPanel({ deck, other }: { deck: Deck; other: Deck }) {
     },
   })
   return (
-    <section className={`deck deck-${deck.name.toLowerCase()}`} aria-label={`Deck ${deck.name}`}>
+    <section
+      className={`deck deck-${deck.name.toLowerCase()}${over ? ' drop-over' : ''}`}
+      aria-label={`Deck ${deck.name}`}
+      data-drop-label={`Drop to load on deck ${deck.name}`}
+      onDragOver={(e) => {
+        if (!isTrackDrag(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setOver(true)
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setOver(false)}
+      onDrop={(e) => {
+        const id = e.dataTransfer.getData(TRACK_MIME)
+        setOver(false)
+        if (!id) return
+        e.preventDefault()
+        onDropTrack(id)
+      }}
+    >
       <div className="deck-head">
         <span className="deck-name">{deck.name}</span>
         <div className="deck-track">
@@ -388,15 +409,21 @@ function MixerPanel({ mixer }: { mixer: Mixer }) {
   )
 }
 
-export function DeckArea() {
+export function DeckArea({ resolve, onLoaded }: { resolve: (id: string) => Track | undefined; onLoaded?: (t: Track) => void }) {
   const mixer = getMixer()
+  const drop = (name: 'A' | 'B') => (id: string) => {
+    const t = resolve(id)
+    if (!t?.playable) return
+    void mixer.decks[name].load(t)
+    onLoaded?.(t)
+  }
   return (
     <div className="decks panel" style={{ '--x': 0 } as CSSProperties}>
       <Waveforms mixer={mixer} />
       <div className="deck-row">
-        <DeckPanel deck={mixer.decks.A} other={mixer.decks.B} />
+        <DeckPanel deck={mixer.decks.A} other={mixer.decks.B} onDropTrack={drop('A')} />
         <MixerPanel mixer={mixer} />
-        <DeckPanel deck={mixer.decks.B} other={mixer.decks.A} />
+        <DeckPanel deck={mixer.decks.B} other={mixer.decks.A} onDropTrack={drop('B')} />
       </div>
     </div>
   )

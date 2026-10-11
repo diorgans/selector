@@ -8,6 +8,7 @@ import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
 import { Shortcuts } from './Shortcuts.tsx'
+import { trackDrag } from './dnd.ts'
 import { KeyChip, SetBuilder, UpNext } from './Sidebar.tsx'
 
 type SortKey = 'title' | 'artist' | 'bpm' | 'key' | 'durationSec' | 'playCount'
@@ -189,7 +190,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        <DeckArea />
+        <DeckArea resolve={(id) => tracksById.get(id)} onLoaded={setSelected} />
         <header className="top panel">
           <input type="search" placeholder="Search title, artist, genre" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search tracks" />
           {keyFilter && (
@@ -221,7 +222,7 @@ export function App() {
             </thead>
             <tbody>
               {visible.map((t) => (
-                <tr key={t.id} className={`${selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''}${t.playable ? '' : ' locked'}`} onClick={() => setSelected(t)}>
+                <tr key={t.id} className={`${selected?.id === t.id ? 'sel' : mixable.has(t.id) ? 'mix' : ''}${t.playable ? '' : ' locked'}`} onClick={() => setSelected(t)} {...trackDrag(t)}>
                   <td className="load">
                     {t.playable ? (
                       <>

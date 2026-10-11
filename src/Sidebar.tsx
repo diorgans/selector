@@ -4,6 +4,7 @@ import { suggestNext, type Direction } from '../shared/recommend.ts'
 import type { Library, Track } from '../shared/types.ts'
 import { exportSets, type SetList } from './api.ts'
 import { vtName, withTransition } from './motion.ts'
+import { trackDrag } from './dnd.ts'
 
 export function KeyChip({ k }: { k: string | null }) {
   if (!k) return <span className="key key-none">–</span>
@@ -43,7 +44,7 @@ export function UpNext({ lib, current, pool, exclude, onPick, onAdd }: {
       ) : (
         <ol className="sugs">
           {suggestions.map((s) => (
-            <li key={s.track.id} className="sug" style={{ viewTransitionName: vtName('sug', s.track.id) }}>
+            <li key={s.track.id} className="sug" style={{ viewTransitionName: vtName('sug', s.track.id) }} {...trackDrag(s.track)}>
               <button type="button" className="sug-main" onClick={() => onPick(s.track)}>
                 <span className="sug-score" aria-label={`Score ${s.score} of 100`}>{s.score}</span>
                 <span className="sug-text">
