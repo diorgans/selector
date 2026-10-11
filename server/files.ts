@@ -21,7 +21,7 @@ export const musicDirs = (process.env.SELECTOR_MUSIC_DIRS ?? [join(homedir(), 'M
   .split(':')
   .filter(Boolean)
 
-const SCAN_CACHE = join(homedir(), '.selector', 'scan-cache.json')
+const SCAN_CACHE = process.env.SELECTOR_SCAN_CACHE ?? join(homedir(), '.selector', 'scan-cache.json')
 
 /** rekordbox writes paths as file://localhost/Users/...; turn one into a plain path (or null for streaming). */
 export function locationToPath(location: string): string | null {

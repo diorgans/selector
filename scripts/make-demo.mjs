@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const SR = 44100
-const out = process.argv[2] ?? join(homedir(), '.selector', 'demo')
+const out = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? join(homedir(), '.selector', 'demo')
 
 function synth({ bpm, rootHz, chord, seconds, offset }) {
   const n = Math.round(seconds * SR)
@@ -72,9 +72,18 @@ function wav([L, R], tags) {
 
 mkdirSync(out, { recursive: true })
 const A = 110, E = 164.81
+// `--full` adds six more tracks (used for the README demo); the default two are for tests.
 const demos = [
   { file: 'Selector Demo - Night Drive.wav', bpm: 124, rootHz: A / 2, chord: [220, 261.63, 329.63], key: 'Am', title: 'Night Drive' },
   { file: 'Selector Demo - Lift Off.wav', bpm: 126, rootHz: E / 2, chord: [164.81, 196, 246.94], key: 'Em', title: 'Lift Off' },
+  ...(process.argv.includes('--full') ? [
+    { file: 'Selector Demo - Glasshouse.wav', bpm: 122, rootHz: 73.42 / 1, chord: [146.83, 174.61, 220], key: 'Dm', title: 'Glasshouse' },
+    { file: 'Selector Demo - Velvet Hour.wav', bpm: 120, rootHz: 65.41, chord: [261.63, 329.63, 392], key: 'C', title: 'Velvet Hour' },
+    { file: 'Selector Demo - Tidal.wav', bpm: 128, rootHz: 61.74, chord: [246.94, 293.66, 369.99], key: 'Bm', title: 'Tidal' },
+    { file: 'Selector Demo - Afterglow.wav', bpm: 125, rootHz: 49, chord: [196, 246.94, 293.66], key: 'G', title: 'Afterglow' },
+    { file: 'Selector Demo - Low Orbit.wav', bpm: 127, rootHz: 46.25, chord: [185, 220, 277.18], key: 'F#m', title: 'Low Orbit' },
+    { file: 'Selector Demo - Sunday Signal.wav', bpm: 118, rootHz: 87.31, chord: [174.61, 220, 261.63], key: 'F', title: 'Sunday Signal' },
+  ] : []),
 ]
 for (const d of demos) {
   const audio = synth({ bpm: d.bpm, rootHz: d.rootHz, chord: d.chord, seconds: 64, offset: 0.5 })

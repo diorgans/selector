@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import * as Shaders from 'shaders/react'
 import { camelotHue, parseCamelot } from '../shared/camelot.ts'
-import { VISUALS_CHANNEL, type VisualFrame } from './visualsLink.ts'
+import { onVisualFrame, VISUALS_CHANNEL, type VisualFrame } from './visualsLink.ts'
 
 // The visuals window: full-screen shader scenes driven by the music.
 // Key → colour palette (smoothly), beat → pulses (bigger on the bar), loudness → intensity.
 
 const S = Shaders as unknown as Record<string, ComponentType<Record<string, unknown>>>
 
-type SceneId = 'aurora' | 'kaleido' | 'mesh' | 'rings'
-const SCENES: { id: SceneId; name: string }[] = [
+export type SceneId = 'aurora' | 'kaleido' | 'mesh' | 'rings'
+export const SCENES: { id: SceneId; name: string }[] = [
   { id: 'aurora', name: 'Aurora' },
   { id: 'kaleido', name: 'Kaleido' },
   { id: 'mesh', name: 'Mesh' },
@@ -38,14 +38,64 @@ function palette(hue: number, minor: boolean) {
   }
 }
 
-const IDLE: VisualFrame = { playing: false, title: '', artist: '', key: null, bpm: null, beatPhase: 0, barBeat: 0, level: 0, trackId: null }
+export const IDLE: VisualFrame = { playing: false, title: '', artist: '', key: null, bpm: null, beatPhase: 0, barBeat: 0, level: 0, trackId: null }
+
+/** One live scene for a stream of frames: used in the visuals window and behind the player. */
+export function VisualScene({ frame, scene, className }: { frame: VisualFrame; scene: SceneId; className?: string }) {
+  const hue = useRef(260)
+  // Ease the hue toward the key's colour (~2 s) so key changes glide.
+  const target = frame.key ? camelotHue(frame.key) : 260
+  const diff = ((target - hue.current + 540) % 360) - 180
+  hue.current = (hue.current + diff * 0.03 + 360) % 360
+  const minor = frame.key ? parseCamelot(frame.key).letter === 'A' : true
+  const p = palette(hue.current, minor)
+  const live = frame.playing
+  const pulse = live ? Math.exp(-frame.beatPhase * 7) * (frame.barBeat === 0 ? 1 : 0.55) : 0
+  const energy = live ? frame.level : 0.15
+  const current = scene
+  return (
+      <S.Shader key={current} className={className ?? "visuals-canvas"}>
+      {current === 'aurora' && (
+        <>
+          <S.LinearGradient colorA={p.dark} colorB="#000000" angle={90} />
+          <S.Aurora colorA={p.a} colorB={p.b} colorC={p.c} intensity={35 + energy * 60} speed={1 + energy * 3} waviness={60 + pulse * 60} curtainCount={3} />
+          <S.Bulge strength={pulse * 0.35} radius={1.4} />
+          <S.Glow intensity={6 + pulse * 18} threshold={0.35} size={30} />
+          <S.FilmGrain strength={0.12} animated />
+        </>
+      )}
+      {current === 'kaleido' && (
+        <>
+          <S.Plasma colorA={p.a} colorB={p.c} stops={[{ color: p.dark, position: 0 }, { color: p.c, position: 0.35 }, { color: p.a, position: 0.7 }, { color: p.b, position: 1 }]} density={1.8 + energy} speed={0.6 + energy * 1.5} intensity={0.9 + energy * 0.8} contrast={1} balance={50} />
+          <S.Kaleidoscope segments={8} angle={(Date.now() / 60) % 360} />
+          <S.ChromaticAberration strength={0.05 + pulse * 0.5} />
+          <S.Vignette intensity={0.7} radius={0.9} />
+        </>
+      )}
+      {current === 'mesh' && (
+        <>
+          <S.MeshGradient stops={[{ color: p.dark, position: 0 }, { color: p.c, position: 0.3 }, { color: p.a, position: 0.6 }, { color: p.b, position: 1 }]} colorA={p.a} colorB={p.b} count={5} speed={1 + energy * 4} swirl={0.3 + pulse * 0.5} />
+          <S.WaveDistortion strength={0.05 + pulse * 0.25} frequency={3} speed={1 + energy * 2} />
+          <S.Glow intensity={3 + energy * 8} threshold={0.65} size={40} />
+        </>
+      )}
+      {current === 'rings' && (
+        <>
+          <S.Ripples colorA={p.dark} colorB={p.b} frequency={12 + energy * 20} speed={1 + energy * 3} thickness={0.25 + pulse * 0.4} />
+          <S.ConcentricSpin intensity={30 + pulse * 60} rings={10} speed={0.6 + energy} />
+          <S.ChromaticAberration strength={pulse * 0.4} />
+          <S.Glow intensity={4 + pulse * 12} threshold={0.6} size={35} />
+        </>
+      )}
+    </S.Shader>
+  )
+}
 
 export function Visuals() {
   const [frame, setFrame] = useState<VisualFrame>(IDLE)
   const [scene, setScene] = useState<SceneId | 'auto'>('auto')
   const [autoIndex, setAutoIndex] = useState(0)
   const [hud, setHud] = useState(true)
-  const hue = useRef(260)
   const lastTrack = useRef<string | null>(null)
   const [showTitle, setShowTitle] = useState(false)
 
@@ -83,54 +133,12 @@ export function Visuals() {
     return () => (window.removeEventListener('mousemove', wake), window.removeEventListener('keydown', key))
   }, [])
 
-  // Ease the hue toward the key's colour (~2 s) so key changes glide.
-  const target = frame.key ? camelotHue(frame.key) : 260
-  const diff = ((target - hue.current + 540) % 360) - 180
-  hue.current = (hue.current + diff * 0.03 + 360) % 360
-  const minor = frame.key ? parseCamelot(frame.key).letter === 'A' : true
-  const p = palette(hue.current, minor)
-
   const live = frame.playing
-  const pulse = live ? Math.exp(-frame.beatPhase * 7) * (frame.barBeat === 0 ? 1 : 0.55) : 0
-  const energy = live ? frame.level : 0.15
   const current: SceneId = scene === 'auto' ? SCENES[autoIndex].id : scene
 
   return (
     <div className="visuals">
-      <S.Shader key={current} className="visuals-canvas">
-        {current === 'aurora' && (
-          <>
-            <S.LinearGradient colorA={p.dark} colorB="#000000" angle={90} />
-            <S.Aurora colorA={p.a} colorB={p.b} colorC={p.c} intensity={35 + energy * 60} speed={1 + energy * 3} waviness={60 + pulse * 60} curtainCount={3} />
-            <S.Bulge strength={pulse * 0.35} radius={1.4} />
-            <S.Glow intensity={6 + pulse * 18} threshold={0.35} size={30} />
-            <S.FilmGrain strength={0.12} animated />
-          </>
-        )}
-        {current === 'kaleido' && (
-          <>
-            <S.Plasma colorA={p.a} colorB={p.c} stops={[{ color: p.dark, position: 0 }, { color: p.c, position: 0.35 }, { color: p.a, position: 0.7 }, { color: p.b, position: 1 }]} density={1.8 + energy} speed={0.6 + energy * 1.5} intensity={0.9 + energy * 0.8} contrast={1} balance={50} />
-            <S.Kaleidoscope segments={8} angle={(Date.now() / 60) % 360} />
-            <S.ChromaticAberration strength={0.05 + pulse * 0.5} />
-            <S.Vignette intensity={0.7} radius={0.9} />
-          </>
-        )}
-        {current === 'mesh' && (
-          <>
-            <S.MeshGradient stops={[{ color: p.dark, position: 0 }, { color: p.c, position: 0.3 }, { color: p.a, position: 0.6 }, { color: p.b, position: 1 }]} colorA={p.a} colorB={p.b} count={5} speed={1 + energy * 4} swirl={0.3 + pulse * 0.5} />
-            <S.WaveDistortion strength={0.05 + pulse * 0.25} frequency={3} speed={1 + energy * 2} />
-            <S.Glow intensity={3 + energy * 8} threshold={0.65} size={40} />
-          </>
-        )}
-        {current === 'rings' && (
-          <>
-            <S.Ripples colorA={p.dark} colorB={p.b} frequency={12 + energy * 20} speed={1 + energy * 3} thickness={0.25 + pulse * 0.4} />
-            <S.ConcentricSpin intensity={30 + pulse * 60} rings={10} speed={0.6 + energy} />
-            <S.ChromaticAberration strength={pulse * 0.4} />
-            <S.Glow intensity={4 + pulse * 12} threshold={0.6} size={35} />
-          </>
-        )}
-      </S.Shader>
+      <VisualScene frame={frame} scene={current} />
 
       <div className={`visuals-title ${showTitle && live ? 'show' : ''}`} aria-live="polite">
         <div className="vt-title">{frame.title}</div>
@@ -144,6 +152,25 @@ export function Visuals() {
         ))}
         <span className="hint">F: full screen</span>
       </div>
+    </div>
+  )
+}
+
+/** Visuals drawn behind the player (inside this window), fed by local frames. */
+export function BackgroundVisuals({ mode }: { mode: 'decks' | 'page' }) {
+  const [frame, setFrame] = useState<VisualFrame>(IDLE)
+  const [autoIndex, setAutoIndex] = useState(0)
+  const last = useRef<string | null>(null)
+  useEffect(() => onVisualFrame(setFrame), [])
+  useEffect(() => {
+    if (!frame.trackId || frame.trackId === last.current || !frame.playing) return
+    if (last.current) setAutoIndex((i) => (i + 1) % SCENES.length)
+    last.current = frame.trackId
+  }, [frame.trackId, frame.playing])
+  return (
+    <div className={`bg-visuals bg-visuals-${mode}`} aria-hidden>
+      <VisualScene frame={frame} scene={SCENES[autoIndex].id} className="bg-visuals-canvas" />
+      <div className="bg-visuals-dim" />
     </div>
   )
 }

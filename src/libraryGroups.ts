@@ -13,7 +13,7 @@ export function libraryGroups(tracks: Track[]): Group[] {
     make('ready', 'Ready to play', 'Files Selector can load onto a deck right now', (t) => t.playable),
     make('downloaded', 'Downloaded from Music', 'Songs downloaded in the Music app (~/Music/Music)', (t) => where(t).includes('/Music/Music/Media')),
   ]
-  // One group per external drive, e.g. "Trojan drive".
+  // One group per external drive, e.g. "MusicDrive drive".
   const drives = [...new Set(files.map((t) => where(t).match(/\/Volumes\/([^/]+)\//)?.[1]).filter((d): d is string => !!d))]
   for (const d of drives.sort())
     groups.push(make(`drive:${d}`, `${d} drive`, `Files on the ${d} drive; greyed out while it's unplugged`, (t) => where(t).includes(`/Volumes/${d}/`)))

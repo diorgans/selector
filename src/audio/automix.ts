@@ -2,6 +2,7 @@
 // free deck, matches tempo, and blends it in on a phrase boundary. Every move is
 // scheduled on the audio clock, so timing stays exact even in a background tab.
 
+import { mixesWell } from '../../shared/camelot.ts'
 import { suggestNext, type Direction } from '../../shared/recommend.ts'
 import type { Track } from '../../shared/types.ts'
 import { startStems, stemStatus } from '../api.ts'
@@ -218,11 +219,21 @@ export class Automix {
       this.run(recipe, plan, start, live, incoming)
       this.lastStyle = recipe.id
       this.scheduled = { start, end: start + plan.duration, plan, recipe }
-      this.emit({ mixAt: start, mixEnd: start + plan.duration, recipe: recipe.name, status: `${recipe.name} into ${this.prepared.title}` })
+      const clash = this.clashes(live, incoming) ? ' (key clash: echoing out)' : ''
+      this.emit({ mixAt: start, mixEnd: start + plan.duration, recipe: recipe.name, status: `${recipe.name} into ${this.prepared.title}${clash}` })
     }
   }
 
+  /** True when the next track clashes with the playing one (only happens when nothing better is left). */
+  private clashes(live: Deck, incoming: Deck) {
+    const a = live.state.track, b = incoming.state.track
+    return !!a && !!b && !mixesWell({ key: a.key, bpm: live.liveBpm }, { key: b.key, bpm: b.bpm })
+  }
+
   private chooseRecipe(live: Deck, incoming: Deck): Recipe {
+    // A key or tempo clash is hidden the way DJs do it: echo the old track out
+    // before the new one lands, so the two never sound together.
+    if (this.clashes(live, incoming)) return RECIPES.echo
     const stemsReady = live.hasStems && incoming.hasStems
     const s = this.settings.style
     if (s === 'surprise') return pickRecipe(this.settings.direction, stemsReady, this.lastStyle)

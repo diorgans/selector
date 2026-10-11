@@ -52,3 +52,12 @@ describe('pickNext', () => {
     expect(pickNext(now, pool, new Set(), { ...smart, source: 'set' }, ['x', 'now', 'locked', 'c', 'a'])?.id).toBe('c')
   })
 })
+
+describe('pickNext when nothing mixes well', () => {
+  const now = t('now', '8A', 124)
+  it('still returns something to play (automix then echoes out to hide the clash)', () => {
+    const pool = [now, t('clash', '3B', 124)]
+    const smart: AutomixSettings = { source: 'smart', direction: 'hold', style: 'surprise', bars: 16, useStems: false }
+    expect(pickNext(now, pool, new Set(), smart, [])?.id).toBe('clash')
+  })
+})

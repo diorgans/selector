@@ -3,6 +3,7 @@ import { audio, getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } f
 import type { Automix, AutomixSettings } from './audio/automix.ts'
 import { RECIPES } from './audio/recipes.ts'
 import { BEAT_CHOICES, FX_INFO, type FxType } from './audio/fx.ts'
+import { BackgroundVisuals } from './Visuals.tsx'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
@@ -539,7 +540,7 @@ function MixerPanel({ mixer, children }: { mixer: Mixer; children?: React.ReactN
   )
 }
 
-export function DeckArea({ resolve, onLoaded, automix }: { resolve: (id: string) => Track | undefined; onLoaded?: (t: Track) => void; automix: Automix }) {
+export function DeckArea({ resolve, onLoaded, automix, visuals }: { resolve: (id: string) => Track | undefined; onLoaded?: (t: Track) => void; automix: Automix; visuals?: boolean }) {
   const mixer = getMixer()
   const drop = (name: 'A' | 'B') => (id: string) => {
     const t = resolve(id)
@@ -548,7 +549,8 @@ export function DeckArea({ resolve, onLoaded, automix }: { resolve: (id: string)
     onLoaded?.(t)
   }
   return (
-    <div className="decks panel" style={{ '--x': 0 } as CSSProperties}>
+    <div className={`decks panel${visuals ? ' with-visuals' : ''}`} style={{ '--x': 0 } as CSSProperties}>
+      {visuals && <BackgroundVisuals mode="decks" />}
       <Waveforms mixer={mixer} />
       <div className="deck-row">
         <DeckPanel deck={mixer.decks.A} other={mixer.decks.B} onDropTrack={drop('A')} />

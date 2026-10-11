@@ -18,6 +18,13 @@ export type VisualFrame = {
 }
 
 let started = false
+const local = new Set<(f: VisualFrame) => void>()
+
+/** Frames inside this window (for visuals drawn behind the player). */
+export function onVisualFrame(fn: (f: VisualFrame) => void) {
+  local.add(fn)
+  return () => void local.delete(fn)
+}
 
 /** Start broadcasting (idempotent). Cheap: one analyser read and one message per frame. */
 export function startVisualsLink(mixer: Mixer) {
@@ -63,6 +70,7 @@ export function startVisualsLink(mixer: Mixer) {
       trackId: t?.id ?? null,
     }
     ch.postMessage(frame)
+    local.forEach((fn) => fn(frame))
   }, 33)
 }
 

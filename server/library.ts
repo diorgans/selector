@@ -91,13 +91,15 @@ async function mtime(path: string) {
 
 export async function loadLibrary(): Promise<Library> {
   const [rbTime, appleTime] = await Promise.all([mtime(paths.rekordbox), mtime(paths.apple)])
-  if (rbTime === null) throw new Error(`No rekordbox export at ${paths.rekordbox}. In rekordbox: File › Export Collection in xml format.`)
   // Re-scan at most every 30 s so new downloads and a plugged-in drive show up without a restart.
   const key = `${rbTime}:${appleTime}:${Math.floor(Date.now() / 30_000)}`
   if (cache?.key === key) return cache.library
-  const rb = parseRekordboxXml(await readFile(paths.rekordbox, 'utf8'))
+  // The rekordbox export is optional: without it Selector runs on music folders alone.
+  const rb = rbTime === null
+    ? { tracks: [], playlists: [], raw: new Map<string, RawTrack>() }
+    : parseRekordboxXml(await readFile(paths.rekordbox, 'utf8'))
   const apple = appleTime === null ? undefined : parseAppleLibrary(await readFile(paths.apple, 'utf8'))
-  // rekordbox's file tracks: playable only if the file is there right now (e.g. the Trojan drive is plugged in).
+  // rekordbox's file tracks: playable only if the file is there right now (e.g. an external drive is plugged in).
   for (const t of rb.tracks) {
     if (t.source !== 'file') continue
     const p = locationToPath(t.location)

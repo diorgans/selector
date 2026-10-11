@@ -43,3 +43,4 @@ evals/**/trajectory/
 *.m4a
 .selector/
 !server/__fixtures__/*.xml
+docs/frames/

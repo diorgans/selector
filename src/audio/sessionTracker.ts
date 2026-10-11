@@ -2,7 +2,7 @@
 // and the crossfader toward it. A track counts once it's been on air for 20 s,
 // so quick previews in headphones-style cueing don't end up in the tracklist.
 
-import { defaultSessionName, type Session } from '../../shared/session.ts'
+import { defaultSessionName, type Session, type SessionTrack } from '../../shared/session.ts'
 import { saveSession } from '../api.ts'
 import type { Automix } from './automix.ts'
 import type { Deck, Mixer } from './engine.ts'
@@ -16,17 +16,22 @@ export const getTracker = (mixer: Mixer, automix: Automix) => (instance ??= new 
 
 export class SessionTracker {
   current?: Session
-  private candidate?: { deck: 'A' | 'B'; trackId: string; since: number }
-  private onAir?: { deck: 'A' | 'B'; trackId: string }
+  /** Per deck: the track loaded there and how long it has been clearly audible. */
+  private inst: Record<'A' | 'B', { trackId?: string; firstAudible?: number; audibleMs: number; entry?: SessionTrack }> = {
+    A: { audibleMs: 0 },
+    B: { audibleMs: 0 },
+  }
+  private lastTick?: number
   private lastSound = 0
   private dirty = false
   private listeners = new Set<() => void>()
   private readonly mixer: Mixer
   private readonly automix: Automix
 
-  constructor(mixer: Mixer, automix: Automix) {
+  constructor(mixer: Mixer, automix: Automix, autostart = true) {
     this.mixer = mixer
     this.automix = automix
+    if (!autostart || typeof window === 'undefined') return
     window.setInterval(() => this.tick(), 1000)
     window.setInterval(() => this.flush(), 10_000)
     window.addEventListener('pagehide', () => this.flush())
@@ -48,46 +53,45 @@ export class SessionTracker {
     return xf * deck.channel.knobs.fader ** 2
   }
 
+  // A track counts once it has been clearly audible for 20 s in total, even while
+  // sharing the mix with the other deck (long layers and stem mashups do that).
   tick(now = Date.now()) {
-    const levels = (['A', 'B'] as const).map((n) => ({ n, level: this.audibility(n, this.mixer.decks[n]) }))
-    const loudest = levels.reduce((a, b) => (b.level > a.level ? b : a))
-    if (loudest.level < 0.3) {
-      this.candidate = undefined
-      if (this.current && now - this.lastSound > SESSION_GAP_MS) this.endSet()
-      return
-    }
-    this.lastSound = now
-    const deck = this.mixer.decks[loudest.n]
-    const track = deck.state.track!
-    if (this.current) {
-      this.current.endedAt = now
-      const last = this.current.tracks.at(-1)
-      if (last && this.onAir?.trackId === track.id && this.onAir.deck === loudest.n) {
-        last.playedSec += 1
+    const dt = this.lastTick === undefined ? 0 : Math.min(5000, now - this.lastTick)
+    this.lastTick = now
+    let anyAudible = false
+    for (const name of ['A', 'B'] as const) {
+      const deck = this.mixer.decks[name]
+      const track = deck.state.track
+      const inst = this.inst[name]
+      if (track?.id !== inst.trackId) this.inst[name] = { trackId: track?.id, audibleMs: 0 }
+      const cur = this.inst[name]
+      if (!track || this.audibility(name, deck) < 0.3) continue
+      anyAudible = true
+      cur.firstAudible ??= now
+      cur.audibleMs += dt
+      if (cur.entry) {
+        cur.entry.playedSec = Math.round(cur.audibleMs / 1000)
         this.dirty = true
-        return
+      } else if (cur.audibleMs >= ON_AIR_AFTER_MS) {
+        this.current ??= { id: `s${cur.firstAudible}`, name: defaultSessionName(cur.firstAudible), startedAt: cur.firstAudible, endedAt: now, tracks: [] }
+        cur.entry = {
+          trackId: track.id, title: track.title, artist: track.artist,
+          bpm: deck.liveBpm ? Math.round(deck.liveBpm * 10) / 10 : null, key: track.key,
+          startedAt: cur.firstAudible, playedSec: Math.round(cur.audibleMs / 1000),
+          via: this.automix.state.on ? 'automix' : 'manual',
+        }
+        this.current.tracks.push(cur.entry)
+        this.current.tracks.sort((x, y) => x.startedAt - y.startedAt)
+        this.current.startedAt = Math.min(this.current.startedAt, cur.firstAudible)
+        this.dirty = true
+        this.emit()
+        this.flush()
       }
     }
-    if (!this.candidate || this.candidate.trackId !== track.id || this.candidate.deck !== loudest.n) {
-      this.candidate = { deck: loudest.n, trackId: track.id, since: now }
-      return
-    }
-    if (now - this.candidate.since < ON_AIR_AFTER_MS) return
-    // On air long enough: log it.
-    if (!this.current) {
-      this.current = { id: `s${this.candidate.since}`, name: defaultSessionName(this.candidate.since), startedAt: this.candidate.since, endedAt: now, tracks: [] }
-    }
-    this.current.tracks.push({
-      trackId: track.id, title: track.title, artist: track.artist,
-      bpm: deck.liveBpm ? Math.round(deck.liveBpm * 10) / 10 : null, key: track.key,
-      startedAt: this.candidate.since, playedSec: Math.round((now - this.candidate.since) / 1000),
-      via: this.automix.state.on ? 'automix' : 'manual',
-    })
-    this.onAir = { deck: loudest.n, trackId: track.id }
-    this.candidate = undefined
-    this.dirty = true
-    this.emit()
-    this.flush()
+    if (anyAudible) {
+      this.lastSound = now
+      if (this.current) this.current.endedAt = now
+    } else if (this.current && now - this.lastSound > SESSION_GAP_MS) this.endSet()
   }
 
   rename(name: string) {
@@ -103,7 +107,7 @@ export class SessionTracker {
     this.dirty = true
     this.flush()
     this.current = undefined
-    this.onAir = undefined
+    for (const n of ['A', 'B'] as const) this.inst[n] = { trackId: this.inst[n].trackId, audibleMs: 0 }
     this.emit()
   }
 

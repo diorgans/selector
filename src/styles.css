@@ -378,3 +378,29 @@ tbody tr[draggable="true"] { cursor: grab; }
 .visuals-hud button[aria-pressed="true"] { background: #fff; color: #000; }
 .visuals-hud .hint { color: rgba(255, 255, 255, 0.6); font-size: 11px; padding: 0 8px; }
 @media (prefers-reduced-motion: reduce) { .visuals-title { transition: none; } }
+
+/* --- Visuals behind the player ----------------------------------------------------- */
+.bg-visuals { pointer-events: none; overflow: hidden; }
+.bg-visuals-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bg-visuals-dim { position: absolute; inset: 0; }
+.bg-visuals-page { position: fixed; inset: 0; z-index: -1; }
+.bg-visuals-page .bg-visuals-dim { background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.55)); }
+.bg-visuals-decks { position: absolute; inset: 0; z-index: 0; border-radius: inherit; }
+.bg-visuals-decks .bg-visuals-dim { background: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.62)); }
+.decks.with-visuals { position: relative; overflow: hidden; }
+.decks.with-visuals > :not(.bg-visuals) { position: relative; z-index: 1; }
+.decks.with-visuals .waves { background: rgba(0, 0, 0, 0.45); }
+/* Console panels are solid; let the background show through a little. */
+:root[data-look="console"] .with-bg-visuals { --panel: rgba(13, 13, 13, 0.8); }
+:root[data-look="console"] .with-bg-visuals ~ *, :root[data-look="console"] body:has(.with-bg-visuals) { background-image: none; }
+.visuals-pick { gap: 6px; }
+.visuals-pick select { background: transparent; color: var(--fg); border: 0; font: 600 12px var(--font); padding: 0; }
+.visuals-pick option { background: var(--bg); }
+@media (prefers-reduced-motion: reduce) { .bg-visuals { display: none; } }
+/* Let the visuals read through more; controls keep their own surfaces. */
+.bg-visuals-decks .bg-visuals-dim { background: linear-gradient(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.42)); }
+.bg-visuals-page .bg-visuals-dim { background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.35)); }
+.decks.with-visuals .waves { background: rgba(0, 0, 0, 0.5); }
+.decks.with-visuals .deck, .decks.with-visuals .mixer { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+/* Over bright visuals, glass panels need more body to keep text readable. */
+:root[data-look="glass"] .with-bg-visuals { --panel: rgba(16, 14, 30, 0.6); }

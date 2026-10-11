@@ -8,6 +8,8 @@ import { getAutomix } from './audio/automix.ts'
 import { getTracker } from './audio/sessionTracker.ts'
 import { Recap } from './Recap.tsx'
 import { openVisuals, startVisualsLink } from './visualsLink.ts'
+import { BackgroundVisuals } from './Visuals.tsx'
+import { capDevicePixelRatio } from './dpr.ts'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
@@ -123,6 +125,25 @@ export function App() {
 
   const [tracker] = useState(() => getTracker(getMixer(), automix))
   useEffect(() => startVisualsLink(getMixer()), [])
+  // Visuals behind the player: off, behind the decks, or the whole background. Remembered.
+  const [visualsMode, setVisualsModeState] = useState<'off' | 'decks' | 'page'>(() => {
+    try {
+      const v = localStorage.getItem('selector-visuals')
+      return v === 'decks' || v === 'page' ? v : 'off'
+    } catch {
+      return 'off'
+    }
+  })
+  if (visualsMode !== 'off') capDevicePixelRatio(1.25) // keep the decks smooth while shaders run
+  const setVisualsMode = (v: string) => {
+    if (v === 'window') return openVisuals()
+    withTransition(() => setVisualsModeState(v as 'off' | 'decks' | 'page'), 'look')
+    try {
+      localStorage.setItem('selector-visuals', v)
+    } catch {
+      /* this visit only */
+    }
+  }
   const [showRecap, setShowRecap] = useState(false)
 
   const loadTo = (deck: 'A' | 'B', t: Track) => {
@@ -179,7 +200,8 @@ export function App() {
   const crates = [...lib.crates].sort((a, b) => b.trackIds.length - a.trackIds.length)
 
   return (
-    <div className="app">
+    <div className={`app${visualsMode === 'page' ? ' with-bg-visuals' : ''}`}>
+      {visualsMode === 'page' && <BackgroundVisuals mode="page" />}
       <aside className="side panel">
         <div className="brand">Selector</div>
         <div className="source" role="tablist" aria-label="Music source">
@@ -215,7 +237,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        <DeckArea resolve={(id) => tracksById.get(id)} onLoaded={setSelected} automix={automix} />
+        <DeckArea resolve={(id) => tracksById.get(id)} onLoaded={setSelected} automix={automix} visuals={visualsMode === 'decks'} />
         <header className="top panel">
           <input type="search" placeholder="Search title, artist, genre" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search tracks" />
           {keyFilter && (
@@ -223,7 +245,15 @@ export function App() {
           )}
           {selected && <span className="legend"><span className="mix-dot" aria-hidden /> {mixable.size} mix well with {selected.title}</span>}
           {!selected && <span className="stats">{visible.length} tracks · {lib.stats.analyzed} analyzed · {lib.stats.streaming} streaming</span>}
-          <button type="button" className="pill" onClick={openVisuals} title="Open the visuals in a new window (drag it to a second screen; press F there for full screen)">Visuals ↗</button>
+          <label className="pill visuals-pick" title="Shader visuals that follow the music">
+            Visuals
+            <select value={visualsMode} onChange={(e) => setVisualsMode(e.target.value)}>
+              <option value="off">Off</option>
+              <option value="decks">Behind decks</option>
+              <option value="page">Whole background</option>
+              <option value="window">New window ↗</option>
+            </select>
+          </label>
           <button type="button" className="pill" onClick={() => setShowRecap(true)} aria-haspopup="dialog">Recap</button>
           <button type="button" className="pill keys-btn" onClick={() => setShowKeys(true)} aria-haspopup="dialog">⌨ Keys <kbd>?</kbd></button>
           <div className="look" role="group" aria-label="Design direction">
