@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'rea
 import { audio, getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
 import type { Automix, AutomixSettings } from './audio/automix.ts'
 import { RECIPES } from './audio/recipes.ts'
+import { BEAT_CHOICES, FX_INFO, type FxType } from './audio/fx.ts'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
@@ -270,6 +271,7 @@ function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDr
         })}
       </div>
       <StemControls deck={deck} />
+      <FxControls deck={deck} />
       <TempoControl deck={deck} />
     </section>
   )
@@ -463,6 +465,37 @@ function AutomixPanel({ automix }: { automix: Automix }) {
         {on && blending ? <> · <b>{Math.min(100, Math.round(((now - mixAt!) / (mixEnd! - mixAt!)) * 100))}%</b></> : null}
         {on && history.length > 1 ? <> · {history.length} played</> : null}
       </p>
+    </div>
+  )
+}
+
+const FX_KEYS = { A: 'E', B: 'I' }
+const beatLabel = (b: number) => (b === 0.25 ? '¼' : b === 0.5 ? '½' : String(b))
+
+/** Live effects for one deck: choose an effect, its beat length and amount, then switch it on. */
+function FxControls({ deck }: { deck: Deck }) {
+  const fx = deck.channel.fx
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => fx.subscribe(bump), [fx])
+  const info = FX_INFO[fx.type]
+  return (
+    <div className={`fx ${fx.on ? 'on' : ''}`} role="group" aria-label={`Deck ${deck.name} effects`}>
+      <select value={fx.type} onChange={(e) => fx.setType(e.target.value as FxType)} aria-label={`Effect for deck ${deck.name}`} title={info.hint}>
+        {(Object.keys(FX_INFO) as FxType[]).map((t) => <option key={t} value={t}>{FX_INFO[t].name}</option>)}
+      </select>
+      <div className="fx-beats" role="group" aria-label="Beat length">
+        {BEAT_CHOICES.map((b) => (
+          <button key={b} type="button" aria-pressed={fx.beats === b} disabled={!info.synced} onClick={() => fx.setBeats(b)} title={`${beatLabel(b)} beat${b > 1 ? 's' : ''}`}>{beatLabel(b)}</button>
+        ))}
+      </div>
+      <button type="button" className="fx-on" aria-pressed={fx.on} aria-keyshortcuts={FX_KEYS[deck.name]} onClick={() => fx.setOn(!fx.on)} aria-label={`${fx.on ? 'Turn off' : 'Turn on'} ${info.name} on deck ${deck.name} (${FX_KEYS[deck.name]})`}>
+        FX<kbd>{FX_KEYS[deck.name]}</kbd>
+      </button>
+      <label className="fx-amount">
+        <span>Amount</span>
+        <input type="range" min={0} max={1} step={0.01} value={fx.amount} onChange={(e) => fx.setAmount(Number(e.target.value))} aria-label={`${info.name} amount, deck ${deck.name}`} onDoubleClick={() => fx.setAmount(0.5)} />
+        <span className="pct">{Math.round(fx.amount * 100)}%</span>
+      </label>
     </div>
   )
 }

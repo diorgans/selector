@@ -5,6 +5,7 @@
 
 import type { Track } from '../../shared/types.ts'
 import { computeWaveform, type Waveform } from './waveform.ts'
+import { FxUnit } from './fx.ts'
 
 let ctx: AudioContext | undefined
 export function audio(): AudioContext {
@@ -28,13 +29,22 @@ export class Master {
     this.input = c.createGain()
     // A gentle limiter on the master bus so two loud decks never clip.
     const limiter = c.createDynamicsCompressor()
-    limiter.threshold.value = -1
+    limiter.threshold.value = -3
     limiter.knee.value = 0
     limiter.ratio.value = 20
-    limiter.attack.value = 0.002
-    limiter.release.value = 0.1
+    limiter.attack.value = 0.001
+    limiter.release.value = 0.12
+    // Last line of defence: a soft clipper that rounds off anything the limiter
+    // lets through, so the output can never pass full scale.
+    const clip = new WaveShaperNode(c, { oversample: '2x' })
+    const n = 2048, curve = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1
+      curve[i] = Math.abs(x) < 0.85 ? x : Math.sign(x) * (0.85 + 0.15 * Math.tanh((Math.abs(x) - 0.85) / 0.15))
+    }
+    clip.curve = curve
     this.output = c.createGain()
-    this.input.connect(limiter).connect(this.output).connect(c.destination)
+    this.input.connect(limiter).connect(clip).connect(this.output).connect(c.destination)
   }
 }
 
@@ -63,6 +73,8 @@ class Channel {
   readonly xfade: GainNode
   /** Dry level after the filter: automix cuts it to let an echo tail ring out on its own. */
   private readonly dry: GainNode
+  /** The deck's live effects unit (echo, reverb, phaser, flanger, trans, wah). */
+  readonly fx: FxUnit
   /** Beat-synced echo: a send into a feedback delay that goes straight to the master. */
   private readonly echoSend: GainNode
   private readonly echoDelay: DelayNode
@@ -77,7 +89,9 @@ class Channel {
     this.fader = c.createGain()
     this.xfade = c.createGain()
     this.dry = c.createGain()
-    this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.dry).connect(this.fader).connect(this.xfade).connect(master.input)
+    this.fx = new FxUnit(c)
+    this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fx.input)
+    this.fx.output.connect(this.dry).connect(this.fader).connect(this.xfade).connect(master.input)
     this.echoSend = new GainNode(c, { gain: 0 })
     this.echoDelay = new DelayNode(c, { maxDelayTime: 2, delayTime: 0.36 })
     const feedback = new GainNode(c, { gain: 0.55 })
@@ -293,6 +307,7 @@ export class Deck {
       if (token !== this.loadToken) return // another track was loaded meanwhile
       this.buffer = buffer
       this.waveform = computeWaveform(buffer)
+      if (track.bpm) this.channel.fx.setBeatSec(60 / track.bpm)
       this.startPos = this.cuePoint
       this.emit({ loading: false })
     } catch (err) {
@@ -415,6 +430,7 @@ export class Deck {
       } // else: a scheduled start hasn't happened yet; position stays at startPos until then
       for (const s of this.sources) s.playbackRate.setValueAtTime(r, now)
     }
+    if (this.bpm) this.channel.fx.setBeatSec(60 / (this.bpm * r))
     this.emit({ rate: r, synced })
   }
 

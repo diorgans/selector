@@ -145,6 +145,7 @@ export function App() {
       const act: Record<string, () => void> = {
         q: () => A.toggle(), p: () => B.toggle(), a: () => A.cue(), l: () => B.cue(),
         s: () => A.syncTo(B), k: () => B.syncTo(A),
+        e: () => A.channel.fx.setOn(!A.channel.fx.on), i: () => B.channel.fx.setOn(!B.channel.fx.on),
         z: () => selected?.playable && loadTo('A', selected), m: () => selected?.playable && loadTo('B', selected),
         ArrowLeft: () => m.setCrossfader(m.crossfader - 0.05), ArrowRight: () => m.setCrossfader(m.crossfader + 0.05),
       }
