@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
-import { getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
+import { audio, getMixer, STEM_GROUPS, type Deck, type Mixer, type StemGroup } from './audio/engine.ts'
+import type { Automix, AutomixSettings } from './audio/automix.ts'
 import { startStems, stemStatus, type StemStatus } from './api.ts'
 import { isTrackDrag, TRACK_MIME } from './dnd.ts'
 import type { Track } from '../shared/types.ts'
@@ -268,7 +269,7 @@ function DeckPanel({ deck, other, onDropTrack }: { deck: Deck; other: Deck; onDr
         })}
       </div>
       <StemControls deck={deck} />
-      <Knob label="Tempo" value={st.rate} min={0.92} max={1.08} center={1} onChange={(v) => deck.setRate(v)} className="tempo" />
+      <TempoControl deck={deck} />
     </section>
   )
 }
@@ -377,39 +378,126 @@ function StemControls({ deck }: { deck: Deck }) {
   )
 }
 
-function ChannelStrip({ deck }: { deck: Deck }) {
-  const [eq, setEq] = useState({ high: 0.5, mid: 0.5, low: 0.5, filter: 0, fader: 1 })
-  const set = (k: keyof typeof eq, v: number) => {
-    setEq((s) => ({ ...s, [k]: v }))
-    if (k === 'filter') deck.channel.setFilter(v)
-    else if (k === 'fader') deck.channel.setFader(v)
-    else deck.channel.setEq(k, v)
+/** Tempo: slider, a box to type an exact BPM, and a one-click reset to the song's own tempo. */
+function TempoControl({ deck }: { deck: Deck }) {
+  const st = useDeck(deck)
+  const bpm = deck.bpm
+  const live = deck.liveBpm
+  const [draft, setDraft] = useState<string>()
+  const commit = () => {
+    const v = Number(draft)
+    setDraft(undefined)
+    if (bpm && v > 0) deck.setRate(v / bpm) // clamped to ±16% by the deck
   }
   return (
-    <div className="strip" aria-label={`Channel ${deck.name}`}>
-      {(['high', 'mid', 'low'] as const).map((b) => (
-        <Knob key={b} label={b === 'high' ? 'Hi' : b === 'mid' ? 'Mid' : 'Low'} value={eq[b]} onChange={(v) => set(b, v)} className={eq[b] <= 0.02 ? 'killed' : ''} />
-      ))}
-      <Knob label="Filter" value={eq.filter} min={-1} max={1} center={0} onChange={(v) => set('filter', v)} />
-      <Knob label={`Ch ${deck.name}`} value={eq.fader} center={1} onChange={(v) => set('fader', v)} className="fader" />
+    <div className="tempo-row">
+      <Knob label="Tempo" value={st.rate} min={0.92} max={1.08} center={1} onChange={(v) => deck.setRate(v)} className="tempo" />
+      <label className="bpm-input">
+        <span className="sr-only">Type a BPM for deck {deck.name}</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          disabled={!bpm}
+          value={draft ?? (live ? live.toFixed(1) : '')}
+          placeholder="BPM"
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') (setDraft(undefined), (e.target as HTMLInputElement).blur())
+          }}
+        />
+      </label>
+      <button type="button" className="reset" disabled={!bpm || Math.abs(st.rate - 1) < 0.0005} onClick={() => deck.setRate(1)} title={bpm ? `Back to the original ${bpm.toFixed(1)} BPM` : undefined}>
+        Reset
+      </button>
     </div>
   )
 }
 
-function MixerPanel({ mixer }: { mixer: Mixer }) {
-  const [x, setX] = useState(mixer.crossfader)
+/** Automix: let Selector keep the music going, blending on the phrase. */
+function AutomixPanel({ automix }: { automix: Automix }) {
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => automix.subscribe(bump), [automix])
+  const { on, status, next, mixAt, mixEnd, history } = automix.state
+  const now = audio().currentTime
+  const blending = !!mixAt && !!mixEnd && now >= mixAt
+  useFrame(on && !!mixAt) // live countdown
+  const s = automix.settings
+  const secs = mixAt ? Math.max(0, mixAt - audio().currentTime) : 0
+  const set = <K extends keyof AutomixSettings>(k: K, v: AutomixSettings[K]) => automix.configure({ [k]: v } as Partial<AutomixSettings>)
+  return (
+    <div className={`automix ${on ? 'on' : ''}`} aria-label="Automix">
+      <button type="button" className="automix-toggle" aria-pressed={on} onClick={() => (on ? automix.stop() : void automix.start())}>
+        <span className="dot" aria-hidden /> Automix {on ? 'on' : 'off'}
+      </button>
+      <div className="automix-settings">
+        <label>Next<select value={s.source} onChange={(e) => set('source', e.target.value as AutomixSettings['source'])}>
+          <option value="smart">Smart pick</option><option value="set">My set</option>
+        </select></label>
+        {s.source === 'smart' && (
+          <label>Energy<select value={s.direction} onChange={(e) => set('direction', e.target.value as AutomixSettings['direction'])}>
+            <option value="lift">Lift</option><option value="hold">Hold</option><option value="cool">Cool</option>
+          </select></label>
+        )}
+        <label>Style<select value={s.style} onChange={(e) => set('style', e.target.value as AutomixSettings['style'])}>
+          <option value="blend">Blend + bass swap</option><option value="filter">Filter out</option><option value="cut">Cut on the bar</option>
+        </select></label>
+        {s.style !== 'cut' && (
+          <label>Length<select value={s.bars} onChange={(e) => set('bars', Number(e.target.value) as AutomixSettings['bars'])}>
+            <option value={8}>8 bars</option><option value={16}>16 bars</option><option value={32}>32 bars</option>
+          </select></label>
+        )}
+      </div>
+      <p className="automix-status" role="status">
+        {status}
+        {on && next && mixAt && !blending ? <> · in <b>{Math.floor(secs / 60)}:{String(Math.floor(secs % 60)).padStart(2, '0')}</b></> : null}
+        {on && blending ? <> · <b>{Math.min(100, Math.round(((now - mixAt!) / (mixEnd! - mixAt!)) * 100))}%</b></> : null}
+        {on && history.length > 1 ? <> · {history.length} played</> : null}
+      </p>
+    </div>
+  )
+}
+
+function ChannelStrip({ deck }: { deck: Deck }) {
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => deck.channel.subscribe(bump), [deck])
+  const k = deck.channel.knobs
+  const set = (key: keyof typeof k, v: number) => {
+    if (key === 'filter') deck.channel.setFilter(v)
+    else if (key === 'fader') deck.channel.setFader(v)
+    else deck.channel.setEq(key, v)
+  }
+  return (
+    <div className="strip" aria-label={`Channel ${deck.name}`}>
+      {(['high', 'mid', 'low'] as const).map((b) => (
+        <Knob key={b} label={b === 'high' ? 'Hi' : b === 'mid' ? 'Mid' : 'Low'} value={k[b]} onChange={(v) => set(b, v)} className={k[b] <= 0.02 ? 'killed' : ''} />
+      ))}
+      <Knob label="Filter" value={k.filter} min={-1} max={1} center={0} onChange={(v) => set('filter', v)} />
+      <Knob label={`Ch ${deck.name}`} value={k.fader} center={1} onChange={(v) => set('fader', v)} className="fader" />
+    </div>
+  )
+}
+
+function MixerPanel({ mixer, children }: { mixer: Mixer; children?: React.ReactNode }) {
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => mixer.subscribe(bump), [mixer])
+  useFrame(!!mixer.xfadeRamp) // follow an automix crossfade as it happens
   return (
     <section className="mixer" aria-label="Mixer">
       <div className="strips">
         <ChannelStrip deck={mixer.decks.A} />
         <ChannelStrip deck={mixer.decks.B} />
       </div>
-      <Knob label="A ⟷ B" value={x} onChange={(v) => (setX(v), mixer.setCrossfader(v))} className="xfader" />
+      <Knob label="A ⟷ B" value={mixer.crossfaderNow()} onChange={(v) => mixer.setCrossfader(v)} className="xfader" />
+      {children}
     </section>
   )
 }
 
-export function DeckArea({ resolve, onLoaded }: { resolve: (id: string) => Track | undefined; onLoaded?: (t: Track) => void }) {
+export function DeckArea({ resolve, onLoaded, automix }: { resolve: (id: string) => Track | undefined; onLoaded?: (t: Track) => void; automix: Automix }) {
   const mixer = getMixer()
   const drop = (name: 'A' | 'B') => (id: string) => {
     const t = resolve(id)
@@ -422,7 +510,7 @@ export function DeckArea({ resolve, onLoaded }: { resolve: (id: string) => Track
       <Waveforms mixer={mixer} />
       <div className="deck-row">
         <DeckPanel deck={mixer.decks.A} other={mixer.decks.B} onDropTrack={drop('A')} />
-        <MixerPanel mixer={mixer} />
+        <MixerPanel mixer={mixer}><AutomixPanel automix={automix} /></MixerPanel>
         <DeckPanel deck={mixer.decks.B} other={mixer.decks.A} onDropTrack={drop('B')} />
       </div>
     </div>

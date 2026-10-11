@@ -4,6 +4,7 @@ import type { Library, Track } from '../shared/types.ts'
 import { fetchLibrary, fetchSets, saveSets, type SetList } from './api.ts'
 import { CamelotWheel } from './CamelotWheel.tsx'
 import { getMixer } from './audio/engine.ts'
+import { Automix } from './audio/automix.ts'
 import { DeckArea } from './Decks.tsx'
 import { withTransition } from './motion.ts'
 import { libraryGroups } from './libraryGroups.ts'
@@ -101,6 +102,22 @@ export function App() {
 
   const tracksById = useMemo(() => new Map((lib?.tracks ?? []).map((t) => [t.id, t])), [lib])
   const inSet = useMemo(() => new Set(set.trackIds), [set])
+  // Automix reads the latest library, set and selection through refs, so it's created once.
+  const live = useRef({ lib, set, selected })
+  live.current = { lib, set, selected }
+  const [automix] = useState(
+    () =>
+      new Automix(getMixer(), {
+        pool: () => live.current.lib?.tracks ?? [],
+        set: () => live.current.set.trackIds,
+        first: () => {
+          const { lib, set, selected } = live.current
+          if (selected?.playable) return selected
+          return set.trackIds.map((id) => lib?.tracks.find((t) => t.id === id)).find((t) => t?.playable)
+        },
+      }),
+  )
+
   const loadTo = (deck: 'A' | 'B', t: Track) => {
     setSelected(t)
     void getMixer().decks[deck].load(t)
@@ -190,7 +207,7 @@ export function App() {
       </aside>
 
       <main className="main">
-        <DeckArea resolve={(id) => tracksById.get(id)} onLoaded={setSelected} />
+        <DeckArea resolve={(id) => tracksById.get(id)} onLoaded={setSelected} automix={automix} />
         <header className="top panel">
           <input type="search" placeholder="Search title, artist, genre" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search tracks" />
           {keyFilter && (

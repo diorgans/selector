@@ -38,7 +38,21 @@ export class Master {
   }
 }
 
+export type Knobs = { high: number; mid: number; low: number; filter: number; fader: number }
+const FLAT: Knobs = { high: 0.5, mid: 0.5, low: 0.5, filter: 0, fader: 1 }
+
 class Channel {
+  /** Where each knob sits, so the UI can show automix moving them. */
+  knobs: Knobs = { ...FLAT }
+  private listeners = new Set<() => void>()
+  subscribe(fn: () => void) {
+    this.listeners.add(fn)
+    return () => void this.listeners.delete(fn)
+  }
+  private changed(patch: Partial<Knobs>) {
+    this.knobs = { ...this.knobs, ...patch }
+    this.listeners.forEach((fn) => fn())
+  }
   readonly input: GainNode
   readonly low: BiquadFilterNode
   readonly mid: BiquadFilterNode
@@ -60,10 +74,40 @@ class Channel {
     this.input.connect(this.low).connect(this.mid).connect(this.high).connect(this.hp).connect(this.lp).connect(this.fader).connect(this.xfade).connect(master.input)
   }
   setEq(band: 'low' | 'mid' | 'high', knob: number) {
+    this[band].gain.cancelScheduledValues(audio().currentTime)
     this[band].gain.setTargetAtTime(eqKnobToDb(knob), audio().currentTime, 0.01)
+    this.changed({ [band]: knob })
+  }
+  /** Set an EQ band at an exact future moment (used for automix bass swaps). */
+  scheduleEq(band: 'low' | 'mid' | 'high', knob: number, at: number) {
+    this[band].gain.setTargetAtTime(eqKnobToDb(knob), at, 0.012)
+    window.setTimeout(() => this.changed({ [band]: knob }), Math.max(0, (at - audio().currentTime) * 1000))
+  }
+  /** Sweep the high-pass filter up over a span (automix "filter" transitions). */
+  scheduleFilterSweep(to: number, at: number, duration: number) {
+    const f = 10 * Math.pow(4000 / 10, to)
+    this.hp.frequency.setValueAtTime(10, at)
+    this.hp.frequency.exponentialRampToValueAtTime(f, at + duration)
+    const steps = 12
+    for (let i = 1; i <= steps; i++)
+      window.setTimeout(() => (this.knobs = { ...this.knobs, filter: (to * i) / steps }, this.listeners.forEach((fn) => fn())), Math.max(0, (at - audio().currentTime + (duration * i) / steps) * 1000))
+  }
+  /** Back to flat: EQ centred, filter open, fader up. */
+  reset() {
+    const t = audio().currentTime
+    for (const band of ['low', 'mid', 'high'] as const) {
+      this[band].gain.cancelScheduledValues(t)
+      this[band].gain.setTargetAtTime(0, t, 0.01)
+    }
+    this.hp.frequency.cancelScheduledValues(t)
+    this.lp.frequency.cancelScheduledValues(t)
+    this.setFilter(0)
+    this.setFader(1)
+    this.changed({ ...FLAT })
   }
   /** One knob: left of centre sweeps a low-pass down, right sweeps a high-pass up. */
   setFilter(v: number) {
+    this.changed({ filter: v })
     const t = audio().currentTime
     const lp = v < -0.02 ? 22000 * Math.pow(200 / 22000, -v) : 22000
     const hp = v > 0.02 ? 10 * Math.pow(4000 / 10, v) : 10
@@ -72,6 +116,7 @@ class Channel {
   }
   setFader(v: number) {
     this.fader.gain.setTargetAtTime(v * v, audio().currentTime, 0.01) // squared: feels linear to the ear
+    this.changed({ fader: v })
   }
 }
 
@@ -131,9 +176,11 @@ export class Deck {
     this.stems = new Map(buffers)
     const pos = this.position()
     if (this.state.playing) {
+      // Keep a scheduled (automix) start time if playback hasn't begun yet.
+      const pending = this.startedAt > audio().currentTime ? this.startedAt : undefined
       this.stopSources()
       this.state.stemsLoaded = true
-      this.startSources(pos)
+      this.startSources(pos, pending)
     }
     this.emit({ stemsLoaded: true })
   }
@@ -167,7 +214,8 @@ export class Deck {
 
   position(): number {
     if (!this.state.playing) return this.startPos
-    return Math.min(this.duration, this.startPos + (audio().currentTime - this.startedAt) * this.state.rate)
+    // max(0, …): a deck scheduled to start in the future holds at its start point until then.
+    return Math.min(this.duration, this.startPos + Math.max(0, audio().currentTime - this.startedAt) * this.state.rate)
   }
 
   async load(track: Track) {
@@ -206,14 +254,29 @@ export class Deck {
     this.sources = []
   }
 
-  private startSources(at: number) {
+  /** Start playing from `at` (seconds into the track) at an exact audio-clock time (automix). */
+  scheduleStart(when: number, at: number) {
+    if (!this.buffer) return
+    void audio().resume()
+    this.stopSources()
+    this.state.playing = true
+    this.startSources(at, when)
+    this.emit({ playing: true })
+  }
+
+  /** The audio-clock time at which this deck will reach track position `pos` (at the current rate). */
+  timeAt(pos: number) {
+    return this.startedAt + (pos - this.startPos) / this.state.rate
+  }
+
+  private startSources(at: number, startAt?: number) {
     if (!this.buffer) return
     const c = audio()
     // Full mix, or the four stems started at the same instant so they stay sample-aligned.
     const plan: [AudioBuffer, AudioNode][] = this.stems && this.state.stemsLoaded
       ? STEM_PARTS.map((p) => [this.stems!.get(p)!, this.stemGains.get(p)!])
       : [[this.buffer, this.channel.input]]
-    const when = c.currentTime
+    const when = startAt ?? c.currentTime
     const sources = plan.map(([buffer, dest]) => {
       const src = new AudioBufferSourceNode(c, { buffer, playbackRate: this.state.rate })
       src.connect(dest)
@@ -278,12 +341,18 @@ export class Deck {
     if (cue) this.seek(cue.timeSec)
   }
 
-  setRate(rate: number, synced = false) {
+  /** Bumped on every manual tempo change, so automatic easing can tell it was overridden. */
+  tempoTouch = 0
+  setRate(rate: number, synced = false, manual = true) {
+    if (manual) this.tempoTouch++
     const r = Math.max(0.84, Math.min(1.16, rate)) // ±16%, like a pitch fader on WIDE
     if (this.state.playing) {
-      this.startPos = this.position()
-      this.startedAt = audio().currentTime
-      for (const s of this.sources) s.playbackRate.setValueAtTime(r, audio().currentTime)
+      const now = audio().currentTime
+      if (this.startedAt <= now) {
+        this.startPos = this.position()
+        this.startedAt = now
+      } // else: a scheduled start hasn't happened yet; position stays at startPos until then
+      for (const s of this.sources) s.playbackRate.setValueAtTime(r, now)
     }
     this.emit({ rate: r, synced })
   }
@@ -340,13 +409,55 @@ export class Mixer {
   readonly master = new Master()
   readonly decks = { A: new Deck(this.master, 'A'), B: new Deck(this.master, 'B') }
   crossfader = 0.5
+  /** A crossfade automix has scheduled, so the slider can follow it. */
+  xfadeRamp?: { from: number; to: number; start: number; duration: number }
+  private listeners = new Set<() => void>()
+  subscribe(fn: () => void) {
+    this.listeners.add(fn)
+    return () => void this.listeners.delete(fn)
+  }
+  /** Crossfader position right now, including any scheduled ramp. */
+  crossfaderNow() {
+    const r = this.xfadeRamp
+    if (!r) return this.crossfader
+    const k = Math.max(0, Math.min(1, (audio().currentTime - r.start) / r.duration))
+    return r.from + (r.to - r.from) * k
+  }
+  /** Move the crossfader from its current spot to `to`, starting at an exact time (equal-power all the way). */
+  scheduleCrossfade(to: number, start: number, duration: number) {
+    const from = this.crossfaderNow()
+    const n = 64
+    const curveA = new Float32Array(n), curveB = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      const x = from + ((to - from) * i) / (n - 1)
+      curveA[i] = Math.cos((x * Math.PI) / 2)
+      curveB[i] = Math.sin((x * Math.PI) / 2)
+    }
+    for (const [deck, curve] of [[this.decks.A, curveA], [this.decks.B, curveB]] as const) {
+      const g = deck.channel.xfade.gain
+      g.cancelScheduledValues(audio().currentTime)
+      g.setValueAtTime(curve[0], audio().currentTime)
+      g.setValueCurveAtTime(curve, start, duration)
+    }
+    this.xfadeRamp = { from, to, start, duration }
+    this.listeners.forEach((fn) => fn())
+    window.setTimeout(() => {
+      if (this.xfadeRamp?.start !== start) return
+      this.crossfader = to
+      this.xfadeRamp = undefined
+      this.listeners.forEach((fn) => fn())
+    }, Math.max(0, (start + duration - audio().currentTime) * 1000) + 30)
+  }
   constructor() {
     this.setCrossfader(0.5)
   }
   /** Equal-power curve: the middle is not quieter than either side. */
   setCrossfader(x: number) {
     this.crossfader = Math.max(0, Math.min(1, x))
+    this.xfadeRamp = undefined
     const t = audio().currentTime
+    for (const d of [this.decks.A, this.decks.B]) d.channel.xfade.gain.cancelScheduledValues(t)
+    this.listeners?.forEach((fn) => fn())
     this.decks.A.channel.xfade.gain.setTargetAtTime(Math.cos((this.crossfader * Math.PI) / 2), t, 0.005)
     this.decks.B.channel.xfade.gain.setTargetAtTime(Math.sin((this.crossfader * Math.PI) / 2), t, 0.005)
   }

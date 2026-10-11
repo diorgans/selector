@@ -273,3 +273,26 @@ tbody tr[draggable="true"] { cursor: grab; }
 :root[data-dragging="track"] .deck { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .deck.drop-over { box-shadow: 0 0 0 2px var(--accent), 0 0 30px -6px var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .deck.drop-over::after { content: attr(data-drop-label); position: absolute; inset: 0; display: grid; place-items: center; font: 800 15px var(--font); color: var(--fg); background: color-mix(in srgb, var(--bg) 55%, transparent); border-radius: inherit; pointer-events: none; }
+
+/* --- Tempo row: slider · typed BPM · reset --------------------------------------- */
+.tempo-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px auto; gap: 8px; align-items: end; }
+.bpm-input input { width: 100%; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--panel-line); background: transparent; color: var(--fg); font: 700 13px var(--num); text-align: right; font-variant-numeric: tabular-nums; }
+.bpm-input input:disabled { opacity: 0.4; }
+.tempo-row .reset { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--panel-line); font: 700 11px var(--num); }
+.tempo-row .reset:not(:disabled):hover { background: var(--accent); color: #0b0b14; }
+.tempo-row .reset:disabled { opacity: 0.35; cursor: default; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* --- Automix ------------------------------------------------------------------- */
+.automix { display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--panel-line); }
+.automix-toggle { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--panel-line); font: 800 12px var(--num); text-transform: uppercase; letter-spacing: 0.08em; }
+.automix-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.automix.on .automix-toggle { border-color: var(--mix); color: var(--mix); }
+.automix.on .automix-toggle .dot { background: var(--mix); box-shadow: 0 0 10px var(--mix); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.automix-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 6px; }
+.automix-settings label { display: grid; gap: 1px; font: 700 9px var(--num); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.automix-settings select { background: transparent; color: var(--fg); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 4px; font: 600 11px var(--font); min-width: 0; }
+.automix-settings option { background: var(--bg); }
+.automix-status { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.automix-status b { color: var(--fg); font-family: var(--num); }
